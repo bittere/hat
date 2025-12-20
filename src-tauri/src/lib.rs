@@ -73,30 +73,6 @@ fn delete_originals(tasks: tauri::State<'_, TaskStore>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn test_compression(
-    tasks: tauri::State<'_, TaskStore>,
-    settings: tauri::State<'_, SettingsStore>,
-) -> Result<String, String> {
-    // Create a test image file in Downloads
-    let downloads_dir = get_downloads_dir();
-    let test_path = downloads_dir.join("test_image.jpg");
-
-    // Create a simple test image (1x1 pixel JPEG)
-    let img = image::RgbImage::new(1, 1);
-    let mut buffer = Vec::new();
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 75);
-    encoder.encode_image(&img).map_err(|e| e.to_string())?;
-    std::fs::write(&test_path, &buffer).map_err(|e| e.to_string())?;
-
-    info!("Created test image: {:?}", test_path);
-
-    // Trigger compression
-    handle_new_image(test_path, tasks.inner().clone(), settings.inner().clone()).await;
-
-    Ok("Test compression started".to_string())
-}
-
-#[tauri::command]
 fn set_quality(settings: tauri::State<'_, SettingsStore>, quality: u8) {
     let mut s = settings.lock().unwrap();
     s.quality = quality;
@@ -406,7 +382,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_compression_status,
             clear_completed,
-            test_compression,
             delete_originals,
             set_quality,
             get_settings,

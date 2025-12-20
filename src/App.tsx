@@ -67,15 +67,6 @@ function App() {
 
   const completedCount = tasks.filter((t) => t.status === "completed").length;
 
-  const handleTestCompression = async () => {
-    try {
-      await invoke("test_compression");
-      console.log("Test compression started");
-    } catch (error) {
-      console.error("Failed to start test compression:", error);
-    }
-  };
-
   const handleDeleteOriginals = async () => {
     if (!window.confirm("Are you sure you want to delete the original files for all completed compressions? This cannot be undone.")) {
       return;
@@ -87,6 +78,14 @@ function App() {
       await invoke("clear_completed");
     } catch (error) {
       console.error("Failed to delete originals:", error);
+    }
+  };
+
+  const handleClearCompleted = async () => {
+    try {
+      await invoke("clear_completed");
+    } catch (error) {
+      console.error("Failed to clear completed tasks:", error);
     }
   };
 
@@ -160,11 +159,8 @@ function App() {
 
           {tasks.length === 0 ? (
             <div className="empty-state">
-              <p>Waiting for images in Downloads folder...</p>
+              <p>Waiting for images in folders...</p>
               <small>Supported formats: JPG, PNG, WebP</small>
-              <button onClick={handleTestCompression} className="btn-primary">
-                Test Compression
-              </button>
             </div>
           ) : (
             <>
@@ -178,14 +174,23 @@ function App() {
                   <span className="value">{formatBytes(totalSavings)}</span>
                 </div>
                 <div className="stat actions">
-                  <span className="label">Actions</span>
-                  <button
-                    onClick={handleDeleteOriginals}
-                    className="btn-danger"
-                    disabled={completedCount === 0}
-                  >
-                    Delete Originals
-                  </button>
+                  <span className="label">Queue Actions</span>
+                  <div className="action-buttons">
+                    <button
+                      onClick={handleClearCompleted}
+                      className="btn-secondary"
+                      disabled={completedCount === 0}
+                    >
+                      Clear Queue
+                    </button>
+                    <button
+                      onClick={handleDeleteOriginals}
+                      className="btn-danger"
+                      disabled={completedCount === 0}
+                    >
+                      Delete Originals
+                    </button>
+                  </div>
                 </div>
               </div>
 
