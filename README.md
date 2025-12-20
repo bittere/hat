@@ -1,7 +1,8 @@
-# Tauri + React + Typescript
+<img src="https://raw.githubusercontent.com/bittere/hat/refs/heads/main/app-icon.png" style="height: 128px" />
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+# Hat
+A simple desktop app that automatically compresses images saved to (configurable) folders.
 
-## Recommended IDE Setup
+All processing is done offline.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Built with Tauri and React.
