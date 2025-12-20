@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+* {
+  box-sizing: border-box;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -50,7 +54,7 @@ html, body {
 }
 
 .compression-status {
-  max-width: 600px;
+  width: 100%;
 }
 
 .status-header {
@@ -99,9 +103,9 @@ html, body {
 
 .stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
 .stat {
@@ -266,4 +270,40 @@ html, body {
 
 .btn-primary:active {
   transform: translateY(0);
+}
+
+.btn-danger {
+  width: 100%;
+  padding: 8px 16px;
+  background: white;
+  color: #ef4444;
+  border: 1px solid #fee2e2;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fecaca;
+  transform: translateY(-1px);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #94a3b8;
+  border-color: #f1f5f9;
+}
+
+.btn-danger:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.stat.actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }

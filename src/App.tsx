@@ -61,6 +61,20 @@ function App() {
     }
   };
 
+  const handleDeleteOriginals = async () => {
+    if (!window.confirm("Are you sure you want to delete the original files for all completed compressions? This cannot be undone.")) {
+      return;
+    }
+    try {
+      await invoke("delete_originals");
+      console.log("Originals deleted");
+      // Clear completed tasks after deleting originals to refresh UI
+      await invoke("clear_completed");
+    } catch (error) {
+      console.error("Failed to delete originals:", error);
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -99,6 +113,16 @@ function App() {
                 <div className="stat">
                   <span className="label">Space Saved</span>
                   <span className="value">{formatBytes(totalSavings)}</span>
+                </div>
+                <div className="stat actions">
+                  <span className="label">Actions</span>
+                  <button
+                    onClick={handleDeleteOriginals}
+                    className="btn-danger"
+                    disabled={completedCount === 0}
+                  >
+                    Delete Originals
+                  </button>
                 </div>
               </div>
 

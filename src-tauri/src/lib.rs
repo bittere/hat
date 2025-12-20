@@ -15,6 +15,7 @@ use compressor::compress_image;
 pub struct CompressionTask {
     pub id: String,
     pub filename: String,
+    pub original_path: String,
     pub status: String, // "pending", "compressing", "completed", "error"
     pub original_size: u64,
     pub compressed_size: Option<u64>,
@@ -42,23 +43,43 @@ fn clear_completed(tasks: tauri::State<'_, TaskStore>) {
 }
 
 #[tauri::command]
+fn delete_originals(tasks: tauri::State<'_, TaskStore>) -> Result<(), String> {
+    let store = tasks.lock().unwrap();
+
+    for (_id, task) in store.iter() {
+        if task.status == "completed" {
+            let path = PathBuf::from(&task.original_path);
+            if path.exists() {
+                if let Err(e) = fs::remove_file(&path) {
+                    error!("Failed to delete original file {:?}: {}", path, e);
+                } else {
+                    info!("Deleted original file: {:?}", path);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn test_compression(tasks: tauri::State<'_, TaskStore>) -> Result<String, String> {
     // Create a test image file in Downloads
     let downloads_dir = get_downloads_dir();
     let test_path = downloads_dir.join("test_image.jpg");
-    
+
     // Create a simple test image (1x1 pixel JPEG)
     let img = image::RgbImage::new(1, 1);
     let mut buffer = Vec::new();
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 75);
     encoder.encode_image(&img).map_err(|e| e.to_string())?;
     std::fs::write(&test_path, &buffer).map_err(|e| e.to_string())?;
-    
+
     info!("Created test image: {:?}", test_path);
-    
+
     // Trigger compression
     handle_new_image(test_path, tasks.inner().clone()).await;
-    
+
     Ok("Test compression started".to_string())
 }
 
@@ -161,6 +182,7 @@ async fn handle_new_image(path: PathBuf, tasks: TaskStore) {
     let task = CompressionTask {
         id: id.clone(),
         filename: filename.clone(),
+        original_path: path.to_string_lossy().to_string(),
         status: "pending".to_string(),
         original_size,
         compressed_size: None,
@@ -295,7 +317,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_compression_status,
             clear_completed,
-            test_compression
+            test_compression,
+            delete_originals
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
