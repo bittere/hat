@@ -16,6 +16,20 @@ function App() {
   const [tasks, setTasks] = useState<CompressionTask[]>([]);
   const [isMonitoring, setIsMonitoring] = useState(true);
   const [quality, setQuality] = useState(30);
+  const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const settings: any = await invoke("get_settings");
+        setQuality(settings.quality);
+        setWatchedFolders(settings.watched_folders);
+      } catch (e) {
+        console.error("Failed to init settings:", e);
+      }
+    };
+    init();
+  }, []);
 
   useEffect(() => {
     if (!isMonitoring) return;
@@ -85,6 +99,26 @@ function App() {
     }
   };
 
+  const handleAddDirectory = async () => {
+    try {
+      const settings: any = await invoke("add_directory");
+      setWatchedFolders(settings.watched_folders);
+    } catch (error) {
+      if (error !== "No folder selected") {
+        console.error("Failed to add directory:", error);
+      }
+    }
+  };
+
+  const handleRemoveDirectory = async (path: string) => {
+    try {
+      const settings: any = await invoke("remove_directory", { path });
+      setWatchedFolders(settings.watched_folders);
+    } catch (error) {
+      console.error("Failed to remove directory:", error);
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -112,6 +146,7 @@ function App() {
                   className="modern-slider"
                 />
               </div>
+
               <label className="toggle">
                 <input
                   type="checkbox"
@@ -198,6 +233,29 @@ function App() {
           )}
         </div>
       </main>
+
+      <footer className="app-footer">
+        <div className="folder-management">
+          <span className="footer-label">Watching:</span>
+          <div className="folder-list">
+            {watchedFolders.map((path) => (
+              <div key={path} className="folder-item">
+                <span title={path}>{path.split(/[\\/]/).pop()}</span>
+                <button
+                  onClick={() => handleRemoveDirectory(path)}
+                  className="btn-icon-danger"
+                  disabled={watchedFolders.length <= 1}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <button onClick={handleAddDirectory} className="btn-secondary-sm">
+            + Add Folder
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

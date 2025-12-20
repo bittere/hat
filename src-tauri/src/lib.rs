@@ -28,9 +28,12 @@ type TaskStore = Arc<Mutex<HashMap<String, CompressionTask>>>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalSettings {
     pub quality: u8,
+    pub watched_folders: Vec<PathBuf>,
 }
 
 type SettingsStore = Arc<Mutex<GlobalSettings>>;
+
+struct WatcherHandle(Arc<Mutex<notify::RecommendedWatcher>>);
 
 // Track processed files to avoid reprocessing
 type ProcessedFiles = Arc<Mutex<HashMap<PathBuf, SystemTime>>>;
@@ -100,6 +103,59 @@ fn set_quality(settings: tauri::State<'_, SettingsStore>, quality: u8) {
     info!("Quality updated to: {}", quality);
 }
 
+#[tauri::command]
+fn get_settings(settings: tauri::State<'_, SettingsStore>) -> GlobalSettings {
+    settings.lock().unwrap().clone()
+}
+
+#[tauri::command]
+async fn add_directory(
+    _tasks: tauri::State<'_, TaskStore>,
+    settings: tauri::State<'_, SettingsStore>,
+    watcher_handle: tauri::State<'_, WatcherHandle>,
+) -> Result<GlobalSettings, String> {
+    let path = rfd::AsyncFileDialog::new()
+        .set_title("Select Folder to Watch")
+        .pick_folder()
+        .await;
+
+    if let Some(folder) = path {
+        let path_buf = folder.path().to_path_buf();
+        let mut s = settings.lock().unwrap();
+
+        if !s.watched_folders.contains(&path_buf) {
+            s.watched_folders.push(path_buf.clone());
+            let mut watcher = watcher_handle.0.lock().unwrap();
+            watcher
+                .watch(&path_buf, RecursiveMode::NonRecursive)
+                .map_err(|e| e.to_string())?;
+            info!("Added directory to watch: {:?}", path_buf);
+        }
+        return Ok(s.clone());
+    }
+
+    Err("No folder selected".into())
+}
+
+#[tauri::command]
+fn remove_directory(
+    settings: tauri::State<'_, SettingsStore>,
+    watcher_handle: tauri::State<'_, WatcherHandle>,
+    path: String,
+) -> Result<GlobalSettings, String> {
+    let path_buf = PathBuf::from(path);
+    let mut s = settings.lock().unwrap();
+
+    if let Some(pos) = s.watched_folders.iter().position(|p| p == &path_buf) {
+        s.watched_folders.remove(pos);
+        let mut watcher = watcher_handle.0.lock().unwrap();
+        let _ = watcher.unwatch(&path_buf);
+        info!("Removed directory from watch: {:?}", path_buf);
+    }
+
+    Ok(s.clone())
+}
+
 fn get_downloads_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Could not find home directory");
     let downloads_dir = home.join("Downloads");
@@ -107,30 +163,28 @@ fn get_downloads_dir() -> PathBuf {
     downloads_dir
 }
 
-async fn watch_downloads(tasks: TaskStore, settings: SettingsStore) {
-    let downloads_dir = get_downloads_dir();
-    info!("Downloads directory: {:?}", downloads_dir);
-
-    if !downloads_dir.exists() {
-        error!("Downloads directory does not exist: {:?}", downloads_dir);
-        return;
-    }
-
-    let processed_files: ProcessedFiles = Arc::new(Mutex::new(HashMap::new()));
+fn setup_watcher(
+    _tasks: TaskStore,
+    _settings: SettingsStore,
+) -> (
+    notify::RecommendedWatcher,
+    std::sync::mpsc::Receiver<Result<Event, notify::Error>>,
+) {
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut watcher = notify::recommended_watcher(move |res: Result<Event, _>| {
+    let watcher = notify::recommended_watcher(move |res: Result<Event, _>| {
         let _ = tx.send(res);
     })
     .expect("Failed to create watcher");
 
-    watcher
-        .watch(&downloads_dir, RecursiveMode::NonRecursive)
-        .expect("Failed to watch downloads directory");
+    (watcher, rx)
+}
 
-    info!(
-        "Started watching Downloads directory: {}",
-        downloads_dir.display()
-    );
+async fn run_watcher_loop(
+    rx: std::sync::mpsc::Receiver<Result<Event, notify::Error>>,
+    tasks: TaskStore,
+    settings: SettingsStore,
+) {
+    let processed_files: ProcessedFiles = Arc::new(Mutex::new(HashMap::new()));
 
     while let Ok(res) = rx.recv() {
         if let Ok(event) = res {
@@ -141,7 +195,6 @@ async fn watch_downloads(tasks: TaskStore, settings: SettingsStore) {
                         info!("Checking file: {:?}", path);
                         if is_image_file(&path) {
                             info!("Image file detected: {:?}", path);
-                            // Check if we've already processed this file recently (within 5 seconds)
                             let should_process = {
                                 let mut processed = processed_files.lock().unwrap();
                                 let now = SystemTime::now();
@@ -157,22 +210,16 @@ async fn watch_downloads(tasks: TaskStore, settings: SettingsStore) {
                                     processed.insert(path.clone(), now);
                                 }
                                 process
-                            }; // Lock is dropped here
+                            };
 
                             if should_process {
-                                info!("Processing new image: {:?}", path);
+                                info!("Processing image: {:?}", path);
                                 handle_new_image(path, tasks.clone(), settings.clone()).await;
-                            } else {
-                                info!("Skipping recently processed file: {:?}", path);
                             }
-                        } else {
-                            info!("Not an image file: {:?}", path);
                         }
                     }
                 }
-                _ => {
-                    info!("Ignoring event kind: {:?}", event.kind);
-                }
+                _ => {}
             }
         }
     }
@@ -298,16 +345,27 @@ pub fn run() {
     let tasks: TaskStore = Arc::new(Mutex::new(HashMap::new()));
     let tasks_clone = tasks.clone();
 
-    let settings: SettingsStore = Arc::new(Mutex::new(GlobalSettings { quality: 30 }));
+    let downloads_dir = get_downloads_dir();
+    let settings: SettingsStore = Arc::new(Mutex::new(GlobalSettings {
+        quality: 30,
+        watched_folders: vec![downloads_dir.clone()],
+    }));
     let settings_clone = settings.clone();
+
+    let (mut watcher, rx) = setup_watcher(tasks_clone.clone(), settings_clone.clone());
+    // Watch initial folder
+    let _ = watcher.watch(&downloads_dir, RecursiveMode::NonRecursive);
+
+    let watcher_handle = WatcherHandle(Arc::new(Mutex::new(watcher)));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(tasks)
         .manage(settings)
+        .manage(watcher_handle)
         .setup(|app| {
-            tauri::async_runtime::spawn(watch_downloads(tasks_clone, settings_clone));
+            tauri::async_runtime::spawn(run_watcher_loop(rx, tasks_clone, settings_clone));
 
             // Create system tray
             let toggle_item =
@@ -346,7 +404,10 @@ pub fn run() {
             clear_completed,
             test_compression,
             delete_originals,
-            set_quality
+            set_quality,
+            get_settings,
+            add_directory,
+            remove_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
