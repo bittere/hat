@@ -85,7 +85,7 @@ function App() {
             <div className="empty-state">
               <p>Waiting for images in Downloads folder...</p>
               <small>Supported formats: JPG, PNG, WebP</small>
-              <button onClick={handleTestCompression} style={{ marginTop: '10px' }}>
+              <button onClick={handleTestCompression} className="btn-primary">
                 Test Compression
               </button>
             </div>
