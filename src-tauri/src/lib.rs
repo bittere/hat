@@ -157,8 +157,11 @@ fn remove_directory(
 }
 
 fn get_downloads_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not find home directory");
-    let downloads_dir = home.join("Downloads");
+    let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
+        dirs::home_dir()
+            .expect("Could not find home directory")
+            .join("Downloads")
+    });
     info!("Downloads directory resolved to: {:?}", downloads_dir);
     downloads_dir
 }
@@ -361,6 +364,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(tasks)
         .manage(settings)
         .manage(watcher_handle)
