@@ -358,6 +358,7 @@ pub fn run() {
                 .build()?;
 
             let _tray = tauri::tray::TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -376,6 +377,11 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // Set window icon explicitly for taskbar
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_icon(app.default_window_icon().unwrap().clone());
+            }
 
             Ok(())
         })
