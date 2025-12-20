@@ -7,7 +7,6 @@ All processing is done offline.
 
 Built with Tauri and React.
 
-## Screenshots
+## Demo
 
-<img src="https://raw.githubusercontent.com/bittere/hat/refs/heads/main/.github/screenshot1.png" />
-<img src="https://raw.githubusercontent.com/bittere/hat/refs/heads/main/.github/screenshot2.png" />
+<img src="https://raw.githubusercontent.com/bittere/hat/refs/heads/main/.github/demo.gif" />
