@@ -15,6 +15,7 @@ interface CompressionTask {
 function App() {
   const [tasks, setTasks] = useState<CompressionTask[]>([]);
   const [isMonitoring, setIsMonitoring] = useState(true);
+  const [quality, setQuality] = useState(30);
 
   useEffect(() => {
     if (!isMonitoring) return;
@@ -75,6 +76,15 @@ function App() {
     }
   };
 
+  const handleQualityChange = async (newQuality: number) => {
+    setQuality(newQuality);
+    try {
+      await invoke("set_quality", { quality: newQuality });
+    } catch (error) {
+      console.error("Failed to update quality:", error);
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -85,14 +95,32 @@ function App() {
         <div className="compression-status">
           <div className="status-header">
             <h2>Compression Queue</h2>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={isMonitoring}
-                onChange={(e) => setIsMonitoring(e.target.checked)}
-              />
-              <span>Monitoring</span>
-            </label>
+            <div className="settings-panel">
+              <div className="quality-slider">
+                <div className="slider-header">
+                  <span>Quality: {quality}%</span>
+                  <span className="quality-label">
+                    {quality < 40 ? "High Compression" : quality > 70 ? "High Quality" : "Balanced"}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={quality}
+                  onChange={(e) => handleQualityChange(parseInt(e.target.value))}
+                  className="modern-slider"
+                />
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={isMonitoring}
+                  onChange={(e) => setIsMonitoring(e.target.checked)}
+                />
+                <span>Monitoring</span>
+              </label>
+            </div>
           </div>
 
           {tasks.length === 0 ? (

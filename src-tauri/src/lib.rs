@@ -25,6 +25,13 @@ pub struct CompressionTask {
 
 type TaskStore = Arc<Mutex<HashMap<String, CompressionTask>>>;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalSettings {
+    pub quality: u8,
+}
+
+type SettingsStore = Arc<Mutex<GlobalSettings>>;
+
 // Track processed files to avoid reprocessing
 type ProcessedFiles = Arc<Mutex<HashMap<PathBuf, SystemTime>>>;
 
@@ -63,7 +70,10 @@ fn delete_originals(tasks: tauri::State<'_, TaskStore>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn test_compression(tasks: tauri::State<'_, TaskStore>) -> Result<String, String> {
+async fn test_compression(
+    tasks: tauri::State<'_, TaskStore>,
+    settings: tauri::State<'_, SettingsStore>,
+) -> Result<String, String> {
     // Create a test image file in Downloads
     let downloads_dir = get_downloads_dir();
     let test_path = downloads_dir.join("test_image.jpg");
@@ -78,9 +88,16 @@ async fn test_compression(tasks: tauri::State<'_, TaskStore>) -> Result<String, 
     info!("Created test image: {:?}", test_path);
 
     // Trigger compression
-    handle_new_image(test_path, tasks.inner().clone()).await;
+    handle_new_image(test_path, tasks.inner().clone(), settings.inner().clone()).await;
 
     Ok("Test compression started".to_string())
+}
+
+#[tauri::command]
+fn set_quality(settings: tauri::State<'_, SettingsStore>, quality: u8) {
+    let mut s = settings.lock().unwrap();
+    s.quality = quality;
+    info!("Quality updated to: {}", quality);
 }
 
 fn get_downloads_dir() -> PathBuf {
@@ -90,7 +107,7 @@ fn get_downloads_dir() -> PathBuf {
     downloads_dir
 }
 
-async fn watch_downloads(tasks: TaskStore) {
+async fn watch_downloads(tasks: TaskStore, settings: SettingsStore) {
     let downloads_dir = get_downloads_dir();
     info!("Downloads directory: {:?}", downloads_dir);
 
@@ -144,7 +161,7 @@ async fn watch_downloads(tasks: TaskStore) {
 
                             if should_process {
                                 info!("Processing new image: {:?}", path);
-                                handle_new_image(path, tasks.clone()).await;
+                                handle_new_image(path, tasks.clone(), settings.clone()).await;
                             } else {
                                 info!("Skipping recently processed file: {:?}", path);
                             }
@@ -161,7 +178,7 @@ async fn watch_downloads(tasks: TaskStore) {
     }
 }
 
-async fn handle_new_image(path: PathBuf, tasks: TaskStore) {
+async fn handle_new_image(path: PathBuf, tasks: TaskStore, settings: SettingsStore) {
     info!("New image detected: {:?}", path);
     info!("File exists: {}", path.exists());
 
@@ -197,15 +214,16 @@ async fn handle_new_image(path: PathBuf, tasks: TaskStore) {
     }
 
     let tasks_clone = tasks.clone();
+    let settings_clone = settings.clone();
     info!("Spawning compression task for: {}", filename);
     tokio::task::spawn_blocking(move || {
         info!("Compression task spawned and executing");
-        compress_task(path, id, tasks_clone);
+        compress_task(path, id, tasks_clone, settings_clone);
     });
     info!("Spawn call completed");
 }
 
-fn compress_task(path: PathBuf, id: String, tasks: TaskStore) {
+fn compress_task(path: PathBuf, id: String, tasks: TaskStore, settings: SettingsStore) {
     info!("Starting compression for: {:?}", path);
 
     // Update status to compressing
@@ -226,7 +244,12 @@ fn compress_task(path: PathBuf, id: String, tasks: TaskStore) {
 
     info!("Output path: {:?}", output_path);
 
-    match compress_image(&path, &output_path) {
+    let quality = {
+        let s = settings.lock().unwrap();
+        s.quality
+    };
+
+    match compress_image(&path, &output_path, quality) {
         Ok(new_size) => {
             let mut store = tasks.lock().unwrap();
             if let Some(task) = store.get_mut(&id) {
@@ -275,12 +298,16 @@ pub fn run() {
     let tasks: TaskStore = Arc::new(Mutex::new(HashMap::new()));
     let tasks_clone = tasks.clone();
 
+    let settings: SettingsStore = Arc::new(Mutex::new(GlobalSettings { quality: 30 }));
+    let settings_clone = settings.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(tasks)
+        .manage(settings)
         .setup(|app| {
-            tauri::async_runtime::spawn(watch_downloads(tasks_clone));
+            tauri::async_runtime::spawn(watch_downloads(tasks_clone, settings_clone));
 
             // Create system tray
             let toggle_item =
@@ -318,7 +345,8 @@ pub fn run() {
             get_compression_status,
             clear_completed,
             test_compression,
-            delete_originals
+            delete_originals,
+            set_quality
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

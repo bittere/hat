@@ -4,7 +4,11 @@ use oxipng::{BitDepth, ColorType as OxiColorType, Options, RawImage};
 use std::fs;
 use std::path::Path;
 
-pub fn compress_image(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+pub fn compress_image(
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
     // Sidecar-based JPEG encoding (bundled) with Rust fallback
 
     let ext = input
@@ -27,9 +31,9 @@ pub fn compress_image(input: &Path, output: &Path) -> Result<u64, Box<dyn std::e
 
     // Try image crate first, fallback to Rust path
     let result = match ext.as_str() {
-        "jpg" | "jpeg" => compress_jpeg(input, output),
-        "png" => compress_png(input, output),
-        "webp" => compress_as_png(input, output),
+        "jpg" | "jpeg" => compress_jpeg(input, output, quality),
+        "png" => compress_png(input, output, quality),
+        "webp" => compress_as_png(input, output, quality),
         _ => Err("Unsupported format".into()),
     };
 
@@ -37,12 +41,16 @@ pub fn compress_image(input: &Path, output: &Path) -> Result<u64, Box<dyn std::e
         Ok(size) => Ok(size),
         Err(e) => {
             warn!("Image crate compression failed: {}, trying fallback", e);
-            compress_with_fallback(input, output, &ext)
+            compress_with_fallback(input, output, &ext, quality)
         }
     }
 }
 
-fn compress_jpeg(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+fn compress_jpeg(
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
     info!("Compressing JPEG: {:?}", input);
 
     // Attempt sidecar path first outside of in-code: handled in parent function
@@ -52,7 +60,7 @@ fn compress_jpeg(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error:
 
     // Fallback: encode without resizing
     let mut buffer = Vec::new();
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 60);
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
     encoder.encode_image(&img)?;
     fs::write(output, &buffer)?;
     let size = buffer.len() as u64;
@@ -60,7 +68,11 @@ fn compress_jpeg(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error:
     Ok(size)
 }
 
-fn compress_png(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+fn compress_png(
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
     info!("Compressing PNG: {:?}", input);
 
     // Get input extension and size metadata
@@ -73,7 +85,10 @@ fn compress_png(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error::
     // Optimization: If already a PNG, optimize the data directly (keeps original dimensions)
     if ext == "png" {
         info!("PNG detected, optimizing directly...");
-        let optimized = oxipng::optimize_from_memory(&original_data, &Options::default())?;
+        // Map 0-100 quality to oxipng optimization level (0-6)
+        let level = (6 - (quality as f32 / 100.0 * 6.0) as u8).min(6);
+        let options = Options::from_preset(level);
+        let optimized = oxipng::optimize_from_memory(&original_data, &options)?;
         fs::write(output, &optimized)?;
         return Ok(optimized.len() as u64);
     }
@@ -92,7 +107,9 @@ fn compress_png(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error::
         "Generating optimized PNG from raw pixels (original dimensions: {}x{})...",
         w, h
     );
-    let optimized = raw.create_optimized_png(&Options::default())?;
+    let level = (6 - (quality as f32 / 100.0 * 6.0) as u8).min(6);
+    let options = Options::from_preset(level);
+    let optimized = raw.create_optimized_png(&options)?;
 
     info!("Writing final output: {:?}", output);
     fs::write(output, &optimized)?;
@@ -102,15 +119,20 @@ fn compress_png(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error::
     Ok(size)
 }
 
-fn compress_as_png(input: &Path, output: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+fn compress_as_png(
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
     // Convert any format to optimized PNG
-    compress_png(input, output)
+    compress_png(input, output, quality)
 }
 
 fn compress_with_fallback(
     input: &Path,
     output: &Path,
     ext: &str,
+    quality: u8,
 ) -> Result<u64, Box<dyn std::error::Error>> {
     info!("Using fallback compression for: {:?}", input);
 
@@ -135,7 +157,7 @@ fn compress_with_fallback(
             }) {
                 let mut buffer = Vec::new();
                 let mut encoder =
-                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 60);
+                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
                 if encoder.encode_image(&img).is_ok() {
                     fs::write(output, &buffer)?;
                     return Ok(buffer.len() as u64);
