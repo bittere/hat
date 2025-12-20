@@ -31,9 +31,10 @@ pub fn compress_image(
 
     // Try image crate first, fallback to Rust path
     let result = match ext.as_str() {
-        "jpg" | "jpeg" => compress_jpeg(input, output, quality),
-        "png" => compress_png(input, output, quality),
-        "webp" => compress_as_png(input, output, quality),
+        "jpg" | "jpeg" | "jfif" => compress_jpeg(input, output, quality),
+        "png" | "bmp" | "tiff" | "tif" => compress_png(input, output, quality),
+        "webp" => compress_webp(input, output, quality),
+        // "gif" => compress_gif(input, output, quality),
         _ => Err("Unsupported format".into()),
     };
 
@@ -44,6 +45,51 @@ pub fn compress_image(
             compress_with_fallback(input, output, &ext, quality)
         }
     }
+}
+
+/*
+fn compress_gif(
+    input: &Path,
+    output: &Path,
+    _quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    info!("Compressing GIF: {:?}", input);
+
+    // For GIFs, pure Rust compression is limited without color quantization.
+    // We'll re-encode it which might apply some basic optimization.
+    let img = ImageReader::open(input)?.decode()?;
+    img.save_with_format(output, image::ImageFormat::Gif)?;
+
+    let size = fs::metadata(output)?.len();
+    info!("GIF processed, size: {}", size);
+    Ok(size)
+}
+*/
+
+fn compress_webp(
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    info!("Compressing WebP natively via webp crate: {:?}", input);
+
+    let img = ImageReader::open(input)?.decode()?;
+    let (width, height) = img.dimensions();
+
+    let webp_data = if img.color().has_alpha() {
+        let rgba = img.to_rgba8();
+        let encoder = webp::Encoder::from_rgba(&rgba, width, height);
+        encoder.encode(quality as f32)
+    } else {
+        let rgb = img.to_rgb8();
+        let encoder = webp::Encoder::from_rgb(&rgb, width, height);
+        encoder.encode(quality as f32)
+    };
+
+    fs::write(output, &*webp_data)?;
+    let size = webp_data.len() as u64;
+    info!("WebP compressed natively via webp crate, size: {}", size);
+    Ok(size)
 }
 
 fn compress_jpeg(
@@ -117,15 +163,6 @@ fn compress_png(
     let size = optimized.len() as u64;
     info!("PNG compression complete, final size: {} bytes", size);
     Ok(size)
-}
-
-fn compress_as_png(
-    input: &Path,
-    output: &Path,
-    quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    // Convert any format to optimized PNG
-    compress_png(input, output, quality)
 }
 
 fn compress_with_fallback(

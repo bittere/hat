@@ -162,7 +162,7 @@ function App() {
           {tasks.length === 0 ? (
             <div className="empty-state">
               <p>Waiting for images in folders...</p>
-              <small>Supported formats: JPG, PNG, WebP</small>
+              <small>Supported formats: JPG, PNG, WebP, JFIF, BMP, TIFF</small>
             </div>
           ) : (
             <>
