@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { TitleBar } from "./components/TitleBar";
 import "./App.css";
 
 interface CompressionTask {
@@ -120,6 +121,7 @@ function App() {
 
   return (
     <div className="app">
+      <TitleBar />
       <header className="app-header">
         <h1>Hat</h1>
         <p>Automatic Image Compressor</p>
