@@ -63,6 +63,10 @@ fn get_compression_status(tasks: tauri::State<'_, TaskStore>) -> Vec<Compression
 
 #[tauri::command]
 fn clear_completed(tasks: tauri::State<'_, TaskStore>) {
+    clear_completed_internal(&tasks);
+}
+
+fn clear_completed_internal(tasks: &tauri::State<'_, TaskStore>) {
     let mut store = tasks.lock().unwrap();
     let app_handle = store.app_handle.clone();
     
@@ -73,6 +77,7 @@ fn clear_completed(tasks: tauri::State<'_, TaskStore>) {
         .map(|(id, _)| id.clone())
         .collect();
     
+    let count = completed_ids.len();
     for id in completed_ids {
         store.tasks.remove(&id);
         if let Some(app_handle) = &app_handle {
@@ -87,6 +92,9 @@ fn clear_completed(tasks: tauri::State<'_, TaskStore>) {
                 error!("Failed to emit task:deleted event: {:?}", e);
             }
         }
+    }
+    if count > 0 {
+        info!("Cleared {} completed tasks", count);
     }
 }
 
@@ -262,11 +270,14 @@ async fn recompress_file(
             .unwrap_or_default()
     ));
     
-    // Create task for recompression with unique ID
-    let task_id = {
-        let store = tasks.lock().unwrap();
-        generate_unique_task_id(&store)
-    };
+    // Check if output file already exists (collision detection)
+    if output_path.exists() {
+        return Err(format!(
+            "Compressed file already exists: {:?}. Delete it before recompressing.",
+            output_path
+        ));
+    }
+    
     let filename = path.file_name()
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
@@ -354,21 +365,7 @@ fn get_downloads_dir() -> PathBuf {
     downloads_dir
 }
 
-fn setup_watcher(
-    _tasks: TaskStore,
-    _settings: SettingsStore,
-) -> (
-    notify::RecommendedWatcher,
-    std::sync::mpsc::Receiver<Result<Event, notify::Error>>,
-) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let watcher = notify::recommended_watcher(move |res: Result<Event, _>| {
-        let _ = tx.send(res);
-    })
-    .expect("Failed to create watcher");
 
-    (watcher, rx)
-}
 
 async fn run_watcher_loop(
     rx: std::sync::mpsc::Receiver<Result<Event, notify::Error>>,
@@ -545,26 +542,27 @@ fn compress_task(
 
     info!("Output path: {:?}", output_path);
     
-    // Emit mid-compression progress
-    {
+    // Check if output file already exists (avoid collision/overwrite)
+    if output_path.exists() {
         let mut store = tasks.lock().unwrap();
         if let Some(task) = store.tasks.get_mut(&id) {
-            task.progress = 50;
+            task.status = "error".to_string();
+            task.error = Some(format!("Compressed file already exists: {:?}", output_path));
+            error!("Cannot compress {}: output file already exists", task.filename);
         }
         if let Some(app_handle_ref) = store.app_handle.as_ref() {
             if let Some(task) = store.tasks.get(&id) {
-                if let Err(e) = app_handle_ref.emit("task:status-changed", TaskEvent {
+                let _ = app_handle_ref.emit("task:status-changed", TaskEvent {
                     id: task.id.clone(),
                     status: task.status.clone(),
                     progress: task.progress,
                     compressed_size: task.compressed_size,
                     filename: None,
                     original_size: None,
-                }) {
-                    error!("Failed to emit mid-compression progress event: {:?}", e);
-                }
+                });
             }
         }
+        return;
     }
 
     match compress_image(&app_handle, &path, &output_path, quality) {
@@ -668,11 +666,12 @@ pub fn run() {
     }));
     let settings_clone = settings.clone();
 
-    // Placeholder watcher and rx created early, but will be replaced in setup
-    let (mut watcher, rx) = setup_watcher(Arc::new(Mutex::new(TaskStoreInner {
-        tasks: HashMap::new(),
-        app_handle: None,
-    })), settings_clone.clone());
+    // Create watcher and channel for file system events
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut watcher = notify::recommended_watcher(move |res: Result<Event, _>| {
+        let _ = tx.send(res);
+    })
+    .expect("Failed to create watcher");
     let _ = watcher.watch(&downloads_dir, RecursiveMode::NonRecursive);
     let watcher_handle = WatcherHandle(Arc::new(Mutex::new(watcher)));
 
