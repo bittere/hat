@@ -497,6 +497,7 @@ fn compress_task(
         let mut store = tasks.lock().unwrap();
         let task_to_emit = if let Some(task) = store.tasks.get_mut(&id) {
             task.status = "compressing".to_string();
+            task.progress = 10;
             Some(task.clone())
         } else {
             None
@@ -531,6 +532,28 @@ fn compress_task(
     ));
 
     info!("Output path: {:?}", output_path);
+    
+    // Emit mid-compression progress
+    {
+        let mut store = tasks.lock().unwrap();
+        if let Some(task) = store.tasks.get_mut(&id) {
+            task.progress = 50;
+        }
+        if let Some(app_handle) = store.app_handle.as_ref() {
+            if let Some(task) = store.tasks.get(&id) {
+                if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
+                    id: task.id.clone(),
+                    status: task.status.clone(),
+                    progress: task.progress,
+                    compressed_size: task.compressed_size,
+                    filename: None,
+                    original_size: None,
+                }) {
+                    error!("Failed to emit mid-compression progress event: {:?}", e);
+                }
+            }
+        }
+    }
 
     match compress_image(&app_handle, &path, &output_path, quality) {
         Ok(new_size) => {

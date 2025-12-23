@@ -187,6 +187,15 @@ function App() {
     }
   };
 
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await invoke("delete_task", { id: taskId });
+      console.log("Task deleted");
+    } catch (error) {
+      console.error("Failed to delete task:", error);
+    }
+  };
+
   return (
     <div className="app">
       <TitleBar />
@@ -301,10 +310,26 @@ function App() {
                           >
                             ↻
                           </button>
+                          <button
+                            onClick={() => handleDeleteTask(task.id)}
+                            className="btn-icon-danger"
+                            title="Delete task"
+                          >
+                            ×
+                          </button>
                         </div>
                       )}
                       {task.status === "error" && (
-                        <span className="badge error">✗ Error</span>
+                        <div className="task-actions">
+                          <span className="badge error">✗ Error</span>
+                          <button
+                            onClick={() => handleDeleteTask(task.id)}
+                            className="btn-icon-danger"
+                            title="Delete task"
+                          >
+                            ×
+                          </button>
+                        </div>
                       )}
                       {task.status === "pending" && (
                         <span className="badge pending">⏳ Pending</span>
