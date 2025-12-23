@@ -162,6 +162,7 @@ async fn run_watcher_loop(
     rx: std::sync::mpsc::Receiver<Result<Event, notify::Error>>,
     tasks: TaskStore,
     settings: SettingsStore,
+    app_handle: tauri::AppHandle,
 ) {
     let processed_files: ProcessedFiles = Arc::new(Mutex::new(HashMap::new()));
 
@@ -193,7 +194,13 @@ async fn run_watcher_loop(
 
                             if should_process {
                                 info!("Processing image: {:?}", path);
-                                handle_new_image(path, tasks.clone(), settings.clone()).await;
+                                handle_new_image(
+                                    path,
+                                    tasks.clone(),
+                                    settings.clone(),
+                                    app_handle.clone(),
+                                )
+                                .await;
                             }
                         }
                     }
@@ -204,7 +211,12 @@ async fn run_watcher_loop(
     }
 }
 
-async fn handle_new_image(path: PathBuf, tasks: TaskStore, settings: SettingsStore) {
+async fn handle_new_image(
+    path: PathBuf,
+    tasks: TaskStore,
+    settings: SettingsStore,
+    app_handle: tauri::AppHandle,
+) {
     info!("New image detected: {:?}", path);
     info!("File exists: {}", path.exists());
 
@@ -241,15 +253,22 @@ async fn handle_new_image(path: PathBuf, tasks: TaskStore, settings: SettingsSto
 
     let tasks_clone = tasks.clone();
     let settings_clone = settings.clone();
+    let app_handle_clone = app_handle.clone();
     info!("Spawning compression task for: {}", filename);
     tokio::task::spawn_blocking(move || {
         info!("Compression task spawned and executing");
-        compress_task(path, id, tasks_clone, settings_clone);
+        compress_task(path, id, tasks_clone, settings_clone, app_handle_clone);
     });
     info!("Spawn call completed");
 }
 
-fn compress_task(path: PathBuf, id: String, tasks: TaskStore, settings: SettingsStore) {
+fn compress_task(
+    path: PathBuf,
+    id: String,
+    tasks: TaskStore,
+    settings: SettingsStore,
+    app_handle: tauri::AppHandle,
+) {
     info!("Starting compression for: {:?}", path);
 
     // Update status to compressing
@@ -275,7 +294,7 @@ fn compress_task(path: PathBuf, id: String, tasks: TaskStore, settings: Settings
         s.quality
     };
 
-    match compress_image(&path, &output_path, quality) {
+    match compress_image(&app_handle, &path, &output_path, quality) {
         Ok(new_size) => {
             let mut store = tasks.lock().unwrap();
             if let Some(task) = store.get_mut(&id) {
@@ -344,11 +363,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(tasks)
         .manage(settings)
         .manage(watcher_handle)
         .setup(|app| {
-            tauri::async_runtime::spawn(run_watcher_loop(rx, tasks_clone, settings_clone));
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(run_watcher_loop(
+                rx,
+                tasks_clone,
+                settings_clone,
+                app_handle,
+            ));
 
             // Create system tray
             let toggle_item =

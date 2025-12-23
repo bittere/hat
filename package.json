@@ -1,13 +1,16 @@
 {
   "name": "hat",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "setup-libvips": "bun scripts/setup-libvips.ts",
+    "dev": "bun run setup-libvips && vite",
+    "build": "bun run setup-libvips && tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "bump-app-version": "bun scripts/bump-version.ts",
+    "benchmark": "bun scripts/benchmark-compression.ts"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -21,6 +24,9 @@
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^22",
+    "adm-zip": "^0.5.16",
+    "@types/adm-zip": "^0.5.6"
   }
 }

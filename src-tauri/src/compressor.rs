@@ -3,8 +3,10 @@ use log::{error, info, warn};
 use oxipng::{BitDepth, ColorType as OxiColorType, Options, RawImage};
 use std::fs;
 use std::path::Path;
+use tauri::AppHandle;
 
 pub fn compress_image(
+    app_handle: &AppHandle,
     input: &Path,
     output: &Path,
     quality: u8,
@@ -29,22 +31,119 @@ pub fn compress_image(
     }
     */
 
-    // Try image crate first, fallback to Rust path
+    // Try libvips sidecar first for JPEG/PNG/WebP, fallback to Rust path
     let result = match ext.as_str() {
-        "jpg" | "jpeg" | "jfif" => compress_jpeg(input, output, quality),
-        "png" | "bmp" | "tiff" | "tif" => compress_png(input, output, quality),
-        "webp" => compress_webp(input, output, quality),
-        // "gif" => compress_gif(input, output, quality),
+        "jpg" | "jpeg" | "jfif" | "png" | "webp" => {
+            match run_vips(app_handle, input, output, quality) {
+                Ok(size) => Ok(size),
+                Err(e) => {
+                    warn!(
+                        "libvips sidecar failed: {}, falling back to Rust implementation",
+                        e
+                    );
+                    match ext.as_str() {
+                        "jpg" | "jpeg" | "jfif" => compress_jpeg(input, output, quality),
+                        "png" => compress_png(input, output, quality),
+                        "webp" => compress_webp(input, output, quality),
+                        _ => Err(e),
+                    }
+                }
+            }
+        }
+        "bmp" | "tiff" | "tif" => compress_png(input, output, quality),
         _ => Err("Unsupported format".into()),
     };
 
     match result {
         Ok(size) => Ok(size),
         Err(e) => {
-            warn!("Image crate compression failed: {}, trying fallback", e);
+            warn!(
+                "All primary compression methods failed: {}, trying basic fallback",
+                e
+            );
             compress_with_fallback(input, output, &ext, quality)
         }
     }
+}
+
+fn run_vips(
+    app_handle: &AppHandle,
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    info!("Running libvips sidecar for: {:?}", input);
+
+    use tauri_plugin_shell::ShellExt;
+    use std::env;
+
+    let input_str = input.to_str().ok_or("Invalid input path")?;
+    let output_str = output.to_str().ok_or("Invalid output path")?;
+    let output_with_quality = format!("{}[Q={}]", output_str, quality);
+
+    info!(
+        "vips command: copy '{}' '{}'",
+        input_str, output_with_quality
+    );
+
+    // Use vips copy command with output options for compression
+    let output_result = tauri::async_runtime::block_on(async {
+        let mut cmd = app_handle
+            .shell()
+            .sidecar("vips")
+            .map_err(|e| {
+                error!("Failed to create vips sidecar: {}", e);
+                format!("Failed to create sidecar: {}", e)
+            })?;
+
+        // Set PATH to include binaries directory for DLL resolution
+        // Add both the src-tauri/binaries directory and app bundle binaries directory
+        let binaries_paths = vec![
+            "src-tauri\\binaries",  // Development mode path
+            ".\\binaries",           // Alternative dev path
+        ];
+
+        let mut path_var = env::var("PATH").unwrap_or_default();
+        for bin_path in binaries_paths {
+            if !path_var.contains(bin_path) {
+                path_var = format!("{};{}", bin_path, path_var);
+            }
+        }
+
+        info!("Setting PATH for vips execution: {}", path_var);
+        cmd = cmd.env("PATH", path_var);
+
+        cmd.args(["copy", input_str, &output_with_quality])
+            .output()
+            .await
+            .map_err(|e| {
+                error!("Failed to execute vips: {}", e);
+                format!("Failed to execute vips: {}", e)
+            })
+    })?;
+
+    let stdout = String::from_utf8_lossy(&output_result.stdout);
+    let stderr = String::from_utf8_lossy(&output_result.stderr);
+
+    info!("vips stdout: {}", stdout);
+    if !stderr.is_empty() {
+        warn!("vips stderr: {}", stderr);
+    }
+
+    if !output_result.status.success() {
+        let error_msg = format!(
+            "vips failed with exit code {:?}: {}",
+            output_result.status.code(),
+            stderr
+        );
+        error!("{}", error_msg);
+        return Err(error_msg.into());
+    }
+
+    // Get the output file size
+    let size = fs::metadata(output)?.len();
+    info!("libvips compressed successfully, size: {}", size);
+    Ok(size)
 }
 
 /*
