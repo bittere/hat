@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{error, info, warn};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -95,29 +95,29 @@ fn delete_originals(tasks: tauri::State<'_, TaskStore>) -> Result<(), String> {
     let mut store = tasks.lock().unwrap();
     let app_handle = store.app_handle.clone();
     
-    let completed_ids: Vec<String> = store
+    // Get list of completed task IDs and their original paths - all in one lock scope
+    let tasks_to_delete: Vec<(String, String)> = store
         .tasks
         .iter()
         .filter(|(_, task)| task.status == "completed")
-        .map(|(id, _)| id.clone())
+        .map(|(id, task)| (id.clone(), task.original_path.clone()))
         .collect();
 
-    for id in completed_ids {
-        if let Some(task) = store.tasks.get(&id) {
-            let path = PathBuf::from(&task.original_path);
-            if path.exists() {
-                if let Err(e) = fs::remove_file(&path) {
-                    error!("Failed to delete original file {:?}: {}", path, e);
-                } else {
-                    info!("Deleted original file: {:?}", path);
-                }
+    for (id, original_path) in tasks_to_delete {
+        // Delete the file
+        let path = PathBuf::from(&original_path);
+        if path.exists() {
+            if let Err(e) = fs::remove_file(&path) {
+                error!("Failed to delete original file {:?}: {}", path, e);
+            } else {
+                info!("Deleted original file: {:?}", path);
             }
         }
         
-        // Remove task from store and emit event
+        // Remove task from store and emit event - still within lock scope
         store.tasks.remove(&id);
-        if let Some(app_handle) = &app_handle {
-            if let Err(e) = app_handle.emit("task:deleted", TaskEvent {
+        if let Some(app_handle_ref) = &app_handle {
+            if let Err(e) = app_handle_ref.emit("task:deleted", TaskEvent {
                 id: id.clone(),
                 status: "deleted".to_string(),
                 progress: 0,
@@ -262,8 +262,11 @@ async fn recompress_file(
             .unwrap_or_default()
     ));
     
-    // Create task for recompression
-    let task_id = uuid::Uuid::new_v4().to_string();
+    // Create task for recompression with unique ID
+    let task_id = {
+        let store = tasks.lock().unwrap();
+        generate_unique_task_id(&store)
+    };
     let filename = path.file_name()
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
@@ -433,7 +436,12 @@ async fn handle_new_image(
     std::thread::sleep(std::time::Duration::from_millis(500));
 
     let filename = path.file_name().unwrap().to_string_lossy().to_string();
-    let id = uuid::Uuid::new_v4().to_string();
+    
+    // Generate unique task ID with collision check
+    let id = {
+        let store = tasks.lock().unwrap();
+        generate_unique_task_id(&store)
+    };
 
     let original_size = match fs::metadata(&path) {
         Ok(m) => m.len(),
@@ -492,35 +500,39 @@ fn compress_task(
 ) {
     info!("Starting compression for: {:?}", path);
 
-    // Update status to compressing and get app_handle + quality in single lock scope
-    let (_app_handle_for_emit, quality) = {
+    // Check if task still exists and get quality in single lock scope
+    let quality = {
         let mut store = tasks.lock().unwrap();
-        let task_to_emit = if let Some(task) = store.tasks.get_mut(&id) {
+        
+        // Verify task exists
+        if !store.tasks.contains_key(&id) {
+            warn!("Task {} disappeared before compression started", id);
+            return;
+        }
+        
+        // Update status to compressing
+        if let Some(task) = store.tasks.get_mut(&id) {
             task.status = "compressing".to_string();
             task.progress = 10;
-            Some(task.clone())
-        } else {
-            None
-        };
+        }
         
-        if let (Some(task), Some(app_handle)) = (task_to_emit, store.app_handle.as_ref()) {
-            if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
-                id: task.id,
-                status: task.status,
-                progress: task.progress,
-                compressed_size: task.compressed_size,
-                filename: None,
-                original_size: None,
-            }) {
-                error!("Failed to emit task:status-changed event: {:?}", e);
+        if let Some(app_handle_ref) = store.app_handle.as_ref() {
+            if let Some(task) = store.tasks.get(&id) {
+                if let Err(e) = app_handle_ref.emit("task:status-changed", TaskEvent {
+                    id: task.id.clone(),
+                    status: task.status.clone(),
+                    progress: task.progress,
+                    compressed_size: task.compressed_size,
+                    filename: None,
+                    original_size: None,
+                }) {
+                    error!("Failed to emit task:status-changed event: {:?}", e);
+                }
             }
         }
         
-        let q = {
-            let s = settings.lock().unwrap();
-            s.quality
-        };
-        (store.app_handle.clone(), q)
+        let s = settings.lock().unwrap();
+        s.quality
     };
 
     let output_path = path.with_file_name(format!(
@@ -539,9 +551,9 @@ fn compress_task(
         if let Some(task) = store.tasks.get_mut(&id) {
             task.progress = 50;
         }
-        if let Some(app_handle) = store.app_handle.as_ref() {
+        if let Some(app_handle_ref) = store.app_handle.as_ref() {
             if let Some(task) = store.tasks.get(&id) {
-                if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
+                if let Err(e) = app_handle_ref.emit("task:status-changed", TaskEvent {
                     id: task.id.clone(),
                     status: task.status.clone(),
                     progress: task.progress,
@@ -568,11 +580,12 @@ fn compress_task(
                 );
                 Some(task.clone())
             } else {
+                warn!("Task {} disappeared during compression", id);
                 None
             };
             
-            if let (Some(task), Some(app_handle)) = (task_to_emit, store.app_handle.as_ref()) {
-                if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
+            if let (Some(task), Some(app_handle_ref)) = (task_to_emit, store.app_handle.as_ref()) {
+                if let Err(e) = app_handle_ref.emit("task:status-changed", TaskEvent {
                     id: task.id,
                     status: task.status,
                     progress: task.progress,
@@ -580,7 +593,7 @@ fn compress_task(
                     filename: None,
                     original_size: None,
                 }) {
-                    error!("Failed to emit task:status-changed event: {:?}", e);
+                    error!("Failed to emit completion event: {:?}", e);
                 }
             }
         }
@@ -592,11 +605,12 @@ fn compress_task(
                 error!("Failed to compress {}: {}", task.filename, e);
                 Some(task.clone())
             } else {
+                warn!("Task {} disappeared during error handling", id);
                 None
             };
             
-            if let (Some(task), Some(app_handle)) = (task_to_emit, store.app_handle.as_ref()) {
-                if let Err(emit_e) = app_handle.emit("task:status-changed", TaskEvent {
+            if let (Some(task), Some(app_handle_ref)) = (task_to_emit, store.app_handle.as_ref()) {
+                if let Err(emit_e) = app_handle_ref.emit("task:status-changed", TaskEvent {
                     id: task.id,
                     status: task.status,
                     progress: task.progress,
@@ -604,10 +618,21 @@ fn compress_task(
                     filename: None,
                     original_size: None,
                 }) {
-                    error!("Failed to emit task:status-changed event: {:?}", emit_e);
+                    error!("Failed to emit error event: {:?}", emit_e);
                 }
             }
         }
+    }
+}
+
+fn generate_unique_task_id(store: &TaskStoreInner) -> String {
+    loop {
+        let id = uuid::Uuid::new_v4().to_string();
+        if !store.tasks.contains_key(&id) {
+            return id;
+        }
+        // Extremely unlikely to reach here, but safeguard against collision
+        warn!("UUID collision detected, generating new one");
     }
 }
 
