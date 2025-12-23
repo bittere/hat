@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use tauri::Manager;
+use tauri::{Manager, Emitter, AppHandle};
 
 mod compressor;
 use compressor::compress_image;
@@ -16,14 +16,29 @@ pub struct CompressionTask {
     pub id: String,
     pub filename: String,
     pub original_path: String,
-    pub status: String, // "pending", "compressing", "completed", "error"
+    pub status: String, // "pending", "compressing", "completed", "error", "reconverting"
     pub original_size: u64,
     pub compressed_size: Option<u64>,
     pub progress: u32,
     pub error: Option<String>,
 }
 
-type TaskStore = Arc<Mutex<HashMap<String, CompressionTask>>>;
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskEvent {
+    pub id: String,
+    pub status: String,
+    pub progress: u32,
+    pub compressed_size: Option<u64>,
+    pub filename: Option<String>,
+    pub original_size: Option<u64>,
+}
+
+pub struct TaskStoreInner {
+    tasks: HashMap<String, CompressionTask>,
+    app_handle: Option<AppHandle>,
+}
+
+type TaskStore = Arc<Mutex<TaskStoreInner>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalSettings {
@@ -41,7 +56,7 @@ type ProcessedFiles = Arc<Mutex<HashMap<PathBuf, SystemTime>>>;
 #[tauri::command]
 fn get_compression_status(tasks: tauri::State<'_, TaskStore>) -> Vec<CompressionTask> {
     let store = tasks.lock().unwrap();
-    let mut results: Vec<_> = store.values().cloned().collect();
+    let mut results: Vec<_> = store.tasks.values().cloned().collect();
     results.sort_by(|a, b| b.id.cmp(&a.id));
     results
 }
@@ -49,15 +64,46 @@ fn get_compression_status(tasks: tauri::State<'_, TaskStore>) -> Vec<Compression
 #[tauri::command]
 fn clear_completed(tasks: tauri::State<'_, TaskStore>) {
     let mut store = tasks.lock().unwrap();
-    store.retain(|_, task| task.status != "completed");
+    let app_handle = store.app_handle.clone();
+    
+    let completed_ids: Vec<String> = store
+        .tasks
+        .iter()
+        .filter(|(_, task)| task.status == "completed")
+        .map(|(id, _)| id.clone())
+        .collect();
+    
+    for id in completed_ids {
+        store.tasks.remove(&id);
+        if let Some(app_handle) = &app_handle {
+            if let Err(e) = app_handle.emit("task:deleted", TaskEvent {
+                id: id.clone(),
+                status: "deleted".to_string(),
+                progress: 0,
+                compressed_size: None,
+                filename: None,
+                original_size: None,
+            }) {
+                error!("Failed to emit task:deleted event: {:?}", e);
+            }
+        }
+    }
 }
 
 #[tauri::command]
 fn delete_originals(tasks: tauri::State<'_, TaskStore>) -> Result<(), String> {
-    let store = tasks.lock().unwrap();
+    let mut store = tasks.lock().unwrap();
+    let app_handle = store.app_handle.clone();
+    
+    let completed_ids: Vec<String> = store
+        .tasks
+        .iter()
+        .filter(|(_, task)| task.status == "completed")
+        .map(|(id, _)| id.clone())
+        .collect();
 
-    for (_id, task) in store.iter() {
-        if task.status == "completed" {
+    for id in completed_ids {
+        if let Some(task) = store.tasks.get(&id) {
             let path = PathBuf::from(&task.original_path);
             if path.exists() {
                 if let Err(e) = fs::remove_file(&path) {
@@ -67,9 +113,49 @@ fn delete_originals(tasks: tauri::State<'_, TaskStore>) -> Result<(), String> {
                 }
             }
         }
+        
+        // Remove task from store and emit event
+        store.tasks.remove(&id);
+        if let Some(app_handle) = &app_handle {
+            if let Err(e) = app_handle.emit("task:deleted", TaskEvent {
+                id: id.clone(),
+                status: "deleted".to_string(),
+                progress: 0,
+                compressed_size: None,
+                filename: None,
+                original_size: None,
+            }) {
+                error!("Failed to emit task:deleted event: {:?}", e);
+            }
+        }
     }
 
     Ok(())
+}
+
+#[tauri::command]
+fn delete_task(tasks: tauri::State<'_, TaskStore>, id: String) -> Result<(), String> {
+    let mut store = tasks.lock().unwrap();
+    let app_handle = store.app_handle.clone();
+    
+    if store.tasks.remove(&id).is_some() {
+        if let Some(app_handle) = &app_handle {
+            if let Err(e) = app_handle.emit("task:deleted", TaskEvent {
+                id: id.clone(),
+                status: "deleted".to_string(),
+                progress: 0,
+                compressed_size: None,
+                filename: None,
+                original_size: None,
+            }) {
+                error!("Failed to emit task:deleted event: {:?}", e);
+            }
+        }
+        info!("Deleted task: {}", id);
+        Ok(())
+    } else {
+        Err(format!("Task not found: {}", id))
+    }
 }
 
 #[tauri::command]
@@ -130,6 +216,129 @@ fn remove_directory(
     }
 
     Ok(s.clone())
+}
+
+#[tauri::command]
+async fn recompress_file(
+    app_handle: tauri::AppHandle,
+    tasks: tauri::State<'_, TaskStore>,
+    settings: tauri::State<'_, SettingsStore>,
+    task_id: String,
+) -> Result<(), String> {
+    // Get the original file path from the existing task
+    let file_path = {
+        let store = tasks.lock().unwrap();
+        store.tasks.get(&task_id)
+            .ok_or("Task not found")?
+            .original_path.clone()
+    };
+
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err("File does not exist".into());
+    }
+
+    // Check if file is already being processed
+    {
+        let store = tasks.lock().unwrap();
+        for task in store.tasks.values() {
+            if task.original_path == file_path && (task.status == "pending" || task.status == "compressing" || task.status == "reconverting") {
+                return Err("File is already being processed".into());
+            }
+        }
+    }
+
+    let s = settings.lock().unwrap();
+    let quality = s.quality;
+    drop(s);
+
+    let output_path = path.with_file_name(format!(
+        "{}_compressed{}",
+        path.file_stem()
+            .map(|f| f.to_string_lossy())
+            .unwrap_or_default(),
+        path.extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default()
+    ));
+    
+    // Create task for recompression
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let filename = path.file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    
+    let original_size = fs::metadata(&path)
+        .map_err(|e| e.to_string())?
+        .len();
+
+    let mut task = CompressionTask {
+        id: task_id.clone(),
+        filename: filename.clone(),
+        original_path: file_path.clone(),
+        status: "reconverting".to_string(),
+        original_size,
+        compressed_size: None,
+        progress: 0,
+        error: None,
+    };
+
+    let app_handle_for_emit = {
+        let mut store = tasks.lock().unwrap();
+        store.tasks.insert(task_id.clone(), task.clone());
+        if let Some(app_handle) = &store.app_handle {
+            if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
+                id: task.id.clone(),
+                status: task.status.clone(),
+                progress: task.progress,
+                compressed_size: task.compressed_size,
+                filename: None,
+                original_size: None,
+            }) {
+                error!("Failed to emit task:status-changed event: {:?}", e);
+            }
+        }
+        store.app_handle.clone()
+    };
+
+    // Perform compression (blocking operation in async context)
+    let compress_result = tokio::task::block_in_place(|| {
+        compress_image(&app_handle, &path, &output_path, quality)
+    });
+    
+    match compress_result {
+        Ok(compressed_size) => {
+            task.compressed_size = Some(compressed_size);
+            task.progress = 100;
+            task.status = "completed".to_string();
+            info!("Recompressed {}: {} → {}", filename, original_size, compressed_size);
+        }
+        Err(e) => {
+            task.status = "error".to_string();
+            task.error = Some(e.to_string());
+            error!("Recompression failed for {}: {}", filename, e);
+        }
+    }
+
+    if let Some(app_handle) = app_handle_for_emit {
+        let mut store = tasks.lock().unwrap();
+        store.tasks.insert(task_id, task.clone());
+        if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
+            id: task.id.clone(),
+            status: task.status.clone(),
+            progress: task.progress,
+            compressed_size: task.compressed_size,
+            filename: None,
+            original_size: None,
+        }) {
+            error!("Failed to emit task:status-changed event: {:?}", e);
+        }
+    } else {
+        let mut store = tasks.lock().unwrap();
+        store.tasks.insert(task_id, task);
+    }
+
+    Ok(())
 }
 
 fn get_downloads_dir() -> PathBuf {
@@ -247,9 +456,21 @@ async fn handle_new_image(
 
     {
         let mut store = tasks.lock().unwrap();
-        store.insert(id.clone(), task.clone());
-        info!("Added task for: {}", filename);
+        store.tasks.insert(id.clone(), task.clone());
+        if let Some(app_handle) = &store.app_handle {
+            if let Err(e) = app_handle.emit("task:created", TaskEvent {
+                id: task.id.clone(),
+                status: task.status.clone(),
+                progress: task.progress,
+                compressed_size: task.compressed_size,
+                filename: Some(task.filename.clone()),
+                original_size: Some(task.original_size),
+            }) {
+                error!("Failed to emit task:created event: {:?}", e);
+            }
+        }
     }
+    info!("Added task for: {}", filename);
 
     let tasks_clone = tasks.clone();
     let settings_clone = settings.clone();
@@ -271,13 +492,35 @@ fn compress_task(
 ) {
     info!("Starting compression for: {:?}", path);
 
-    // Update status to compressing
-    {
+    // Update status to compressing and get app_handle + quality in single lock scope
+    let (_app_handle_for_emit, quality) = {
         let mut store = tasks.lock().unwrap();
-        if let Some(task) = store.get_mut(&id) {
+        let task_to_emit = if let Some(task) = store.tasks.get_mut(&id) {
             task.status = "compressing".to_string();
+            Some(task.clone())
+        } else {
+            None
+        };
+        
+        if let (Some(task), Some(app_handle)) = (task_to_emit, store.app_handle.as_ref()) {
+            if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
+                id: task.id,
+                status: task.status,
+                progress: task.progress,
+                compressed_size: task.compressed_size,
+                filename: None,
+                original_size: None,
+            }) {
+                error!("Failed to emit task:status-changed event: {:?}", e);
+            }
         }
-    }
+        
+        let q = {
+            let s = settings.lock().unwrap();
+            s.quality
+        };
+        (store.app_handle.clone(), q)
+    };
 
     let output_path = path.with_file_name(format!(
         "{}_compressed{}",
@@ -289,15 +532,10 @@ fn compress_task(
 
     info!("Output path: {:?}", output_path);
 
-    let quality = {
-        let s = settings.lock().unwrap();
-        s.quality
-    };
-
     match compress_image(&app_handle, &path, &output_path, quality) {
         Ok(new_size) => {
             let mut store = tasks.lock().unwrap();
-            if let Some(task) = store.get_mut(&id) {
+            let task_to_emit = if let Some(task) = store.tasks.get_mut(&id) {
                 task.status = "completed".to_string();
                 task.compressed_size = Some(new_size);
                 task.progress = 100;
@@ -305,14 +543,46 @@ fn compress_task(
                     "Compressed {}: {} -> {}",
                     task.filename, task.original_size, new_size
                 );
+                Some(task.clone())
+            } else {
+                None
+            };
+            
+            if let (Some(task), Some(app_handle)) = (task_to_emit, store.app_handle.as_ref()) {
+                if let Err(e) = app_handle.emit("task:status-changed", TaskEvent {
+                    id: task.id,
+                    status: task.status,
+                    progress: task.progress,
+                    compressed_size: task.compressed_size,
+                    filename: None,
+                    original_size: None,
+                }) {
+                    error!("Failed to emit task:status-changed event: {:?}", e);
+                }
             }
         }
         Err(e) => {
             let mut store = tasks.lock().unwrap();
-            if let Some(task) = store.get_mut(&id) {
+            let task_to_emit = if let Some(task) = store.tasks.get_mut(&id) {
                 task.status = "error".to_string();
                 task.error = Some(e.to_string());
                 error!("Failed to compress {}: {}", task.filename, e);
+                Some(task.clone())
+            } else {
+                None
+            };
+            
+            if let (Some(task), Some(app_handle)) = (task_to_emit, store.app_handle.as_ref()) {
+                if let Err(emit_e) = app_handle.emit("task:status-changed", TaskEvent {
+                    id: task.id,
+                    status: task.status,
+                    progress: task.progress,
+                    compressed_size: task.compressed_size,
+                    filename: None,
+                    original_size: None,
+                }) {
+                    error!("Failed to emit task:status-changed event: {:?}", emit_e);
+                }
             }
         }
     }
@@ -343,9 +613,6 @@ pub fn run() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let tasks: TaskStore = Arc::new(Mutex::new(HashMap::new()));
-    let tasks_clone = tasks.clone();
-
     let downloads_dir = get_downloads_dir();
     let settings: SettingsStore = Arc::new(Mutex::new(GlobalSettings {
         quality: 30,
@@ -353,10 +620,12 @@ pub fn run() {
     }));
     let settings_clone = settings.clone();
 
-    let (mut watcher, rx) = setup_watcher(tasks_clone.clone(), settings_clone.clone());
-    // Watch initial folder
+    // Placeholder watcher and rx created early, but will be replaced in setup
+    let (mut watcher, rx) = setup_watcher(Arc::new(Mutex::new(TaskStoreInner {
+        tasks: HashMap::new(),
+        app_handle: None,
+    })), settings_clone.clone());
     let _ = watcher.watch(&downloads_dir, RecursiveMode::NonRecursive);
-
     let watcher_handle = WatcherHandle(Arc::new(Mutex::new(watcher)));
 
     tauri::Builder::default()
@@ -364,11 +633,17 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(tasks)
-        .manage(settings)
-        .manage(watcher_handle)
         .setup(|app| {
             let app_handle = app.handle().clone();
+            // Create TaskStore with AppHandle - this is the single source of truth
+            let tasks: TaskStore = Arc::new(Mutex::new(TaskStoreInner {
+                tasks: HashMap::new(),
+                app_handle: Some(app_handle.clone()),
+            }));
+            let tasks_clone = tasks.clone();
+            // Manage it so Tauri commands can access it
+            app.manage(tasks);
+            // Spawn the watcher loop with the same TaskStore
             tauri::async_runtime::spawn(run_watcher_loop(
                 rx,
                 tasks_clone,
@@ -412,16 +687,20 @@ pub fn run() {
                 let _ = window.set_icon(app.default_window_icon().unwrap().clone());
             }
 
+            app.manage(settings);
+            app.manage(watcher_handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_compression_status,
             clear_completed,
             delete_originals,
+            delete_task,
             set_quality,
             get_settings,
             add_directory,
-            remove_directory
+            remove_directory,
+            recompress_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

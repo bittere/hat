@@ -1,16 +1,27 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { TitleBar } from "./components/TitleBar";
 import "./App.css";
 
 interface CompressionTask {
   id: string;
   filename: string;
-  status: "pending" | "compressing" | "completed" | "error";
+  status: "pending" | "compressing" | "completed" | "error" | "reconverting";
   original_size: number;
   compressed_size?: number;
   progress: number;
   error?: string;
+  original_path?: string;
+}
+
+interface TaskEvent {
+  id: string;
+  status: string;
+  progress: number;
+  compressed_size?: number;
+  filename?: string;
+  original_size?: number;
 }
 
 function App() {
@@ -33,21 +44,71 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isMonitoring) return;
-
-    const interval = setInterval(async () => {
+    const setupEventListeners = async () => {
       try {
-        const result = await invoke<CompressionTask[]>(
-          "get_compression_status"
-        );
-        setTasks(result);
-      } catch (error) {
-        console.error("Failed to fetch compression status:", error);
-      }
-    }, 1000);
+        // Hydrate initial state once on mount
+        const initialTasks = await invoke<CompressionTask[]>("get_compression_status");
+        setTasks(initialTasks);
 
-    return () => clearInterval(interval);
-  }, [isMonitoring]);
+        // Listen for task creation events
+        const unlistenCreated = await listen<TaskEvent>("task:created", (event) => {
+          const taskEvent = event.payload;
+          setTasks((prev) => {
+            const exists = prev.find((t) => t.id === taskEvent.id);
+            if (exists) return prev;
+            return [
+              ...prev,
+              {
+                id: taskEvent.id,
+                filename: taskEvent.filename || "Unknown",
+                original_size: taskEvent.original_size || 0,
+                compressed_size: taskEvent.compressed_size,
+                progress: taskEvent.progress,
+                status: taskEvent.status as any,
+              },
+            ];
+          });
+        });
+
+        // Listen for task status changes (progress, completion, errors)
+        const unlistenStatusChanged = await listen<TaskEvent>("task:status-changed", (event) => {
+          const taskEvent = event.payload;
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === taskEvent.id
+                ? {
+                    ...task,
+                    status: taskEvent.status as any,
+                    progress: taskEvent.progress,
+                    compressed_size: taskEvent.compressed_size,
+                  }
+                : task
+            )
+          );
+        });
+
+        // Listen for task deletion events
+        const unlistenDeleted = await listen<TaskEvent>("task:deleted", (event) => {
+          const taskEvent = event.payload;
+          setTasks((prev) => prev.filter((task) => task.id !== taskEvent.id));
+        });
+
+        return () => {
+          unlistenCreated();
+          unlistenStatusChanged();
+          unlistenDeleted();
+        };
+      } catch (error) {
+        console.error("Failed to setup event listeners:", error);
+      }
+    };
+
+    const cleanup = setupEventListeners();
+    
+    return () => {
+      cleanup.then((fn) => fn && fn());
+    };
+  }, []);
 
   const totalSavings = tasks.reduce((sum, task) => {
     if (task.compressed_size) {
@@ -75,8 +136,7 @@ function App() {
     try {
       await invoke("delete_originals");
       console.log("Originals deleted");
-      // Clear completed tasks after deleting originals to refresh UI
-      await invoke("clear_completed");
+      // Events will handle UI update via task:deleted listener
     } catch (error) {
       console.error("Failed to delete originals:", error);
     }
@@ -116,6 +176,14 @@ function App() {
       setWatchedFolders(settings.watched_folders);
     } catch (error) {
       console.error("Failed to remove directory:", error);
+    }
+  };
+
+  const handleRecompress = async (taskId: string) => {
+    try {
+      await invoke("recompress_file", { task_id: taskId });
+    } catch (error) {
+      console.error("Failed to recompress file:", error);
     }
   };
 
@@ -215,7 +283,7 @@ function App() {
                       )}
                     </div>
                     <div className="task-status">
-                      {task.status === "compressing" && (
+                      {(task.status === "compressing" || task.status === "reconverting") && (
                         <div className="progress-bar">
                           <div
                             className="progress-fill"
@@ -224,13 +292,25 @@ function App() {
                         </div>
                       )}
                       {task.status === "completed" && (
-                        <span className="badge success">✓ Done</span>
+                        <div className="task-actions">
+                          <span className="badge success">✓ Done</span>
+                          <button
+                            onClick={() => handleRecompress(task.id)}
+                            className="btn-icon-small"
+                            title="Recompress with current quality"
+                          >
+                            ↻
+                          </button>
+                        </div>
                       )}
                       {task.status === "error" && (
                         <span className="badge error">✗ Error</span>
                       )}
                       {task.status === "pending" && (
                         <span className="badge pending">⏳ Pending</span>
+                      )}
+                      {task.status === "reconverting" && (
+                        <span className="badge reconverting">⟳ Reconverting</span>
                       )}
                     </div>
                   </div>

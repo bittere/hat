@@ -5,11 +5,23 @@ use std::fs;
 use std::path::Path;
 use tauri::AppHandle;
 
+type ProgressCallback = Box<dyn Fn(u32) -> Result<(), Box<dyn std::error::Error>>>;
+
 pub fn compress_image(
     app_handle: &AppHandle,
     input: &Path,
     output: &Path,
     quality: u8,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    compress_image_internal(app_handle, input, output, quality, None)
+}
+
+fn compress_image_internal(
+    app_handle: &AppHandle,
+    input: &Path,
+    output: &Path,
+    quality: u8,
+    progress_callback: Option<ProgressCallback>,
 ) -> Result<u64, Box<dyn std::error::Error>> {
     // Sidecar-based JPEG encoding (bundled) with Rust fallback
 
@@ -20,6 +32,10 @@ pub fn compress_image(
         .to_lowercase();
 
     info!("Compressing {} file: {:?}", ext, input);
+    
+    if let Some(ref cb) = progress_callback {
+        let _ = cb(10); // Initial progress
+    }
 
     /*
     // Try sidecar-based JPEG encoding first, then fallback to Rust path
@@ -36,7 +52,12 @@ pub fn compress_image(
     let result = match ext.as_str() {
         "jpg" | "jpeg" | "jfif" | "png" | "webp" | "gif" => {
             match run_vips(app_handle, input, output, quality) {
-                Ok(size) => Ok(size),
+                Ok(size) => {
+                    if let Some(ref cb) = progress_callback {
+                        let _ = cb(90); // 90% before final completion
+                    }
+                    Ok(size)
+                },
                 Err(e) => {
                     warn!(
                         "libvips sidecar failed: {}, falling back to Rust implementation",
@@ -57,13 +78,22 @@ pub fn compress_image(
     };
 
     match result {
-        Ok(size) => Ok(size),
+        Ok(size) => {
+            if let Some(ref cb) = progress_callback {
+                let _ = cb(95); // Near completion
+            }
+            Ok(size)
+        },
         Err(e) => {
             warn!(
                 "All primary compression methods failed: {}, trying basic fallback",
                 e
             );
-            compress_with_fallback(input, output, &ext, quality)
+            let size = compress_with_fallback(input, output, &ext, quality)?;
+            if let Some(ref cb) = progress_callback {
+                let _ = cb(95);
+            }
+            Ok(size)
         }
     }
 }

@@ -393,6 +393,11 @@ html, body {
   color: #856404;
 }
 
+.badge.reconverting {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
 .btn-primary {
   margin-top: 16px;
   padding: 10px 24px;
@@ -481,4 +486,32 @@ html, body {
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-icon-small {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.btn-icon-small:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+  transform: scale(1.1);
 }
