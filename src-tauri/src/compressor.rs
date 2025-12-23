@@ -31,9 +31,10 @@ pub fn compress_image(
     }
     */
 
-    // Try libvips sidecar first for JPEG/PNG/WebP, fallback to Rust path
+    // Try libvips sidecar first for JPEG/PNG/WebP/GIF, fallback to Rust path
+    // GIFs: vips handles with [n=-1] to preserve all animation frames
     let result = match ext.as_str() {
-        "jpg" | "jpeg" | "jfif" | "png" | "webp" => {
+        "jpg" | "jpeg" | "jfif" | "png" | "webp" | "gif" => {
             match run_vips(app_handle, input, output, quality) {
                 Ok(size) => Ok(size),
                 Err(e) => {
@@ -45,6 +46,7 @@ pub fn compress_image(
                         "jpg" | "jpeg" | "jfif" => compress_jpeg(input, output, quality),
                         "png" => compress_png(input, output, quality),
                         "webp" => compress_webp(input, output, quality),
+                        "gif" => compress_gif(input, output, quality),
                         _ => Err(e),
                     }
                 }
@@ -79,65 +81,135 @@ fn run_vips(
 
     let input_str = input.to_str().ok_or("Invalid input path")?;
     let output_str = output.to_str().ok_or("Invalid output path")?;
-    let output_with_quality = format!("{}[Q={}]", output_str, quality);
+    
+    let ext = input
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
 
-    info!(
-        "vips command: copy '{}' '{}'",
-        input_str, output_with_quality
-    );
+    // Set PATH to include binaries directory for DLL resolution
+    let binaries_paths = vec![
+        "src-tauri\\binaries",  // Development mode path
+        ".\\binaries",           // Alternative dev path
+    ];
 
-    // Use vips copy command with output options for compression
-    let output_result = tauri::async_runtime::block_on(async {
-        let mut cmd = app_handle
-            .shell()
-            .sidecar("vips")
-            .map_err(|e| {
-                error!("Failed to create vips sidecar: {}", e);
-                format!("Failed to create sidecar: {}", e)
-            })?;
-
-        // Set PATH to include binaries directory for DLL resolution
-        // Add both the src-tauri/binaries directory and app bundle binaries directory
-        let binaries_paths = vec![
-            "src-tauri\\binaries",  // Development mode path
-            ".\\binaries",           // Alternative dev path
-        ];
-
-        let mut path_var = env::var("PATH").unwrap_or_default();
-        for bin_path in binaries_paths {
-            if !path_var.contains(bin_path) {
-                path_var = format!("{};{}", bin_path, path_var);
-            }
+    let mut path_var = env::var("PATH").unwrap_or_default();
+    for bin_path in binaries_paths {
+        if !path_var.contains(bin_path) {
+            path_var = format!("{};{}", bin_path, path_var);
         }
+    }
 
-        info!("Setting PATH for vips execution: {}", path_var);
-        cmd = cmd.env("PATH", path_var);
+    // GIFs need special handling with gifsave command
+    if ext == "gif" {
+        let input_with_frames = format!("{}[n=-1]", input_str);
+        // Map quality 0-100 to bitdepth 1-8 (lower quality = fewer colors = smaller file)
+        let bitdepth = std::cmp::max(1, ((quality as f32 / 100.0) * 8.0) as u8);
+        
+        info!(
+            "vips gifsave '{}' '{}' --bitdepth {}",
+            input_with_frames, output_str, bitdepth
+        );
 
-        cmd.args(["copy", input_str, &output_with_quality])
+        let output_result = tauri::async_runtime::block_on(async {
+            let mut cmd = app_handle
+                .shell()
+                .sidecar("vips")
+                .map_err(|e| {
+                    error!("Failed to create vips sidecar: {}", e);
+                    format!("Failed to create sidecar: {}", e)
+                })?;
+
+            info!("Setting PATH for vips execution: {}", path_var);
+            cmd = cmd.env("PATH", path_var);
+
+            cmd.args([
+                "gifsave",
+                &input_with_frames,
+                output_str,
+                "--bitdepth",
+                &bitdepth.to_string(),
+            ])
             .output()
             .await
             .map_err(|e| {
-                error!("Failed to execute vips: {}", e);
+                error!("Failed to execute vips gifsave: {}", e);
                 format!("Failed to execute vips: {}", e)
             })
-    })?;
+        })?;
 
-    let stdout = String::from_utf8_lossy(&output_result.stdout);
-    let stderr = String::from_utf8_lossy(&output_result.stderr);
+        let stdout = String::from_utf8_lossy(&output_result.stdout);
+        let stderr = String::from_utf8_lossy(&output_result.stderr);
 
-    info!("vips stdout: {}", stdout);
-    if !stderr.is_empty() {
-        warn!("vips stderr: {}", stderr);
-    }
+        info!("vips gifsave stdout: {}", stdout);
+        if !stderr.is_empty() {
+            warn!("vips gifsave stderr: {}", stderr);
+        }
 
-    if !output_result.status.success() {
-        let error_msg = format!(
-            "vips failed with exit code {:?}: {}",
-            output_result.status.code(),
-            stderr
+        if !output_result.status.success() {
+            let error_msg = format!(
+                "vips gifsave failed with exit code {:?}: {}",
+                output_result.status.code(),
+                stderr
+            );
+            error!("{}", error_msg);
+            return Err(error_msg.into());
+        }
+        
+        // Check if compression actually reduced file size; if not, just copy original
+        let output_size = fs::metadata(output)?.len();
+        let input_size = fs::metadata(input)?.len();
+        if output_size > input_size {
+            warn!("GIF recompression increased file size ({} → {}), using original", input_size, output_size);
+            fs::copy(input, output)?;
+        }
+    } else {
+        // For JPEG/PNG/WebP, use copy with Q parameter
+        let output_with_quality = format!("{}[Q={}]", output_str, quality);
+
+        info!(
+            "vips copy '{}' '{}'",
+            input_str, output_with_quality
         );
-        error!("{}", error_msg);
-        return Err(error_msg.into());
+
+        let output_result = tauri::async_runtime::block_on(async {
+            let mut cmd = app_handle
+                .shell()
+                .sidecar("vips")
+                .map_err(|e| {
+                    error!("Failed to create vips sidecar: {}", e);
+                    format!("Failed to create sidecar: {}", e)
+                })?;
+
+            info!("Setting PATH for vips execution: {}", path_var);
+            cmd = cmd.env("PATH", path_var);
+
+            cmd.args(["copy", input_str, &output_with_quality])
+                .output()
+                .await
+                .map_err(|e| {
+                    error!("Failed to execute vips: {}", e);
+                    format!("Failed to execute vips: {}", e)
+                })
+        })?;
+
+        let stdout = String::from_utf8_lossy(&output_result.stdout);
+        let stderr = String::from_utf8_lossy(&output_result.stderr);
+
+        info!("vips stdout: {}", stdout);
+        if !stderr.is_empty() {
+            warn!("vips stderr: {}", stderr);
+        }
+
+        if !output_result.status.success() {
+            let error_msg = format!(
+                "vips failed with exit code {:?}: {}",
+                output_result.status.code(),
+                stderr
+            );
+            error!("{}", error_msg);
+            return Err(error_msg.into());
+        }
     }
 
     // Get the output file size
@@ -146,24 +218,25 @@ fn run_vips(
     Ok(size)
 }
 
-/*
 fn compress_gif(
     input: &Path,
     output: &Path,
     _quality: u8,
 ) -> Result<u64, Box<dyn std::error::Error>> {
-    info!("Compressing GIF: {:?}", input);
+    info!("Processing GIF (fallback): {:?}", input);
 
-    // For GIFs, pure Rust compression is limited without color quantization.
-    // We'll re-encode it which might apply some basic optimization.
-    let img = ImageReader::open(input)?.decode()?;
-    img.save_with_format(output, image::ImageFormat::Gif)?;
+    // Fallback when libvips fails.
+    // vips is the only reliable way to compress GIFs while preserving animation.
+    // The Rust image crate only decodes the first frame of animated GIFs.
+    // As a last resort, just copy the file.
+    warn!("libvips unavailable for GIF, copying to preserve animation");
+    fs::copy(input, output)?;
 
     let size = fs::metadata(output)?.len();
-    info!("GIF processed, size: {}", size);
+    info!("GIF copied (fallback), size: {}", size);
     Ok(size)
 }
-*/
+
 
 fn compress_webp(
     input: &Path,

@@ -330,7 +330,7 @@ fn is_image_file(path: &Path) -> bool {
         let ext = ext.to_string_lossy().to_lowercase();
         matches!(
             ext.as_str(),
-            "jpg" | "jpeg" | "png" | "webp" | "jfif" | "bmp" | "tiff" | "tif"
+            "jpg" | "jpeg" | "png" | "webp" | "jfif" | "bmp" | "tiff" | "tif" | "gif"
         )
     } else {
         false
