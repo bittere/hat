@@ -33,9 +33,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "binaries/*/*.dll",
-      "binaries/*/*.dylib",
-      "binaries/*/*.so*"
+      "binaries/**/*",
     ]
   }
 }
