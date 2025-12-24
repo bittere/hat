@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, rmSync, readdirSync, writeFileSync, cpSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path"; // Added dirname import
 import * as tar from "tar";
-import { execSync } from "child_process";
 
 const BINARIES_DIR = "src-tauri/binaries";
 const HEADERS_DIR = "src-tauri/include";
@@ -151,8 +150,8 @@ async function extractLibvips() {
         const basename = filename.split("/").pop() || filename.split("\\").pop() || filename;
         const dst = join(targetLibDir, basename);
         
-        // Create subdirectories if needed
-        const dstDir = dst.substring(0, dst.lastIndexOf("\\"));
+        // FIX: Use dirname() instead of string manipulation
+        const dstDir = dirname(dst);
         mkdirSync(dstDir, { recursive: true });
         
         cpSync(src, dst);
@@ -170,15 +169,18 @@ async function extractLibvips() {
     
     if (existsSync(includePath)) {
       const includeFiles = readdirSync(includePath, { recursive: true }) as (string | any)[];
-      console.log(`📄 Copying header files...`);
+      console.log(`📄 Copying header files from package...`);
       
       for (const file of includeFiles) {
         const filename = typeof file === "string" ? file : (file.name as string);
         if (filename.endsWith(".h")) {
           const src = join(includePath, filename);
           const dst = join(HEADERS_DIR, filename);
-          const dstDir = dst.substring(0, dst.lastIndexOf("\\"));
+          
+          // FIX: Use dirname() instead of string manipulation
+          const dstDir = dirname(dst);
           mkdirSync(dstDir, { recursive: true });
+          
           cpSync(src, dst);
         }
       }
@@ -229,8 +231,12 @@ async function extractLibvips() {
         if (filename.endsWith(".h")) {
           const src = join(foundHeaderPath, filename);
           const dst = join(HEADERS_DIR, filename);
-          const dstDir = dst.substring(0, dst.lastIndexOf("\\"));
+          
+          // FIX: Use dirname() instead of string manipulation
+          // This was the specific location failing in your second error log
+          const dstDir = dirname(dst);
           mkdirSync(dstDir, { recursive: true });
+          
           cpSync(src, dst);
         }
       }
