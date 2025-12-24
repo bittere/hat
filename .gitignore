@@ -24,4 +24,5 @@ dist-ssr
 *.sw?
 
 src-tauri/binaries/*
-temp_vips/*
+src-tauri/include/*
+temp_libvips/*
