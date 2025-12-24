@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, rmSync, readdirSync, writeFileSync, cpSync } from "node:fs";
-import { join, dirname } from "node:path"; // Added dirname import
+import { join, dirname } from "node:path";
 import * as tar from "tar";
 
 const BINARIES_DIR = "src-tauri/binaries";
@@ -9,7 +9,8 @@ const TEMP_DIR = "temp_libvips";
 
 // Only supported distribution targets
 const PLATFORM_MAP: Record<string, { target: string; package: string }> = {
-  "win32-x64": { target: "x86_64-pc-windows-gnu", package: "@img/sharp-libvips-win32-x64" },
+  // CHANGED: "gnu" -> "msvc" to match standard Windows Rust toolchain
+  "win32-x64": { target: "x86_64-pc-windows-msvc", package: "@img/sharp-libvips-win32-x64" },
   "linux-x64": { target: "x86_64-unknown-linux-gnu", package: "@img/sharp-libvips-linux-x64" },
   "darwin-x64": { target: "x86_64-apple-darwin", package: "@img/sharp-libvips-darwin-x64" },
   "darwin-arm64": { target: "aarch64-apple-darwin", package: "@img/sharp-libvips-darwin-arm64" },
@@ -46,7 +47,6 @@ async function downloadTarball(packageName: string, version: string = "latest"):
 }
 
 async function downloadLibvipsHeaders(version: string = "8.17.3"): Promise<Buffer> {
-  // Try multiple URLs as github might have different formats
   const urls = [
     `https://github.com/libvips/libvips/releases/download/v${version}/libvips-${version}.tar.gz`,
     `https://github.com/libvips/libvips/archive/refs/tags/v${version}.tar.gz`,
@@ -71,27 +71,9 @@ async function extractLibvips() {
   console.log(`📦 Target: ${target}`);
   console.log(`📦 Package: ${packageName}`);
   
-  // Check if binaries already exist
   const targetLibDir = join(BINARIES_DIR, target);
-  if (existsSync(targetLibDir)) {
-    const files = readdirSync(targetLibDir);
-    const hasLibs = files.some((f) => /\.(so|dylib|dll|lib)$/.test(f));
-    if (hasLibs) {
-      console.log(`✅ libvips binaries already exist for ${target}, skipping download`);
-      return;
-    }
-  }
-
-  // Check if headers already exist
-  if (existsSync(HEADERS_DIR)) {
-    const files = readdirSync(HEADERS_DIR);
-    const hasHeaders = files.some((f) => f.endsWith(".h"));
-    if (hasHeaders) {
-      console.log(`✅ libvips headers already exist, skipping download`);
-      return;
-    }
-  }
   
+  // Clean checks to ensure we don't have partial installs
   mkdirSync(BINARIES_DIR, { recursive: true });
   mkdirSync(HEADERS_DIR, { recursive: true });
   mkdirSync(TEMP_DIR, { recursive: true });
@@ -112,13 +94,12 @@ async function extractLibvips() {
       cwd: extractDir,
     });
     
-    // Find lib files - could be in multiple places
+    // Locate lib folder
     let libPath = join(extractDir, "package", "lib");
     if (!existsSync(libPath)) {
       libPath = join(extractDir, "lib");
     }
     if (!existsSync(libPath)) {
-      // Try to find lib in subdirs
       const extractedContents = readdirSync(extractDir);
       const subdir = extractedContents.find(d => {
         const p = join(extractDir, d, "lib");
@@ -139,18 +120,15 @@ async function extractLibvips() {
       
       console.log(`📚 Found ${libFiles.length} library files`);
       
-      // Create target-specific directory
-      const targetLibDir = join(BINARIES_DIR, target);
       mkdirSync(targetLibDir, { recursive: true });
       
-      // Copy library files
       for (const libFile of libFiles) {
         const filename = typeof libFile === "string" ? libFile : (libFile.name as string);
         const src = join(libPath, filename);
         const basename = filename.split("/").pop() || filename.split("\\").pop() || filename;
         const dst = join(targetLibDir, basename);
         
-        // FIX: Use dirname() instead of string manipulation
+        // FIX: Use dirname() for cross-platform support
         const dstDir = dirname(dst);
         mkdirSync(dstDir, { recursive: true });
         
@@ -161,7 +139,7 @@ async function extractLibvips() {
       throw new Error(`lib directory not found at ${libPath}`);
     }
     
-    // Also copy include files for vips-sys
+    // Copy headers from package if they exist
     let includePath = join(extractDir, "package", "include");
     if (!existsSync(includePath)) {
       includePath = join(extractDir, "include");
@@ -177,7 +155,6 @@ async function extractLibvips() {
           const src = join(includePath, filename);
           const dst = join(HEADERS_DIR, filename);
           
-          // FIX: Use dirname() instead of string manipulation
           const dstDir = dirname(dst);
           mkdirSync(dstDir, { recursive: true });
           
@@ -190,8 +167,7 @@ async function extractLibvips() {
     throw error;
   }
 
-
-  // Download and extract headers from main libvips release
+  // Download official headers
   try {
     console.log("\n📥 Downloading libvips headers...");
     const headersTarball = await downloadLibvipsHeaders();
@@ -207,7 +183,6 @@ async function extractLibvips() {
       cwd: headersExtractDir,
     });
     
-    // Find vips.h and copy headers
     const possiblePaths = [
       join(headersExtractDir, "libvips-8.17.3", "libvips"),
       join(headersExtractDir, "libvips-8.17.3", "include"),
@@ -232,8 +207,6 @@ async function extractLibvips() {
           const src = join(foundHeaderPath, filename);
           const dst = join(HEADERS_DIR, filename);
           
-          // FIX: Use dirname() instead of string manipulation
-          // This was the specific location failing in your second error log
           const dstDir = dirname(dst);
           mkdirSync(dstDir, { recursive: true });
           
