@@ -32,8 +32,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/vips"
+    "resources": [
+      "binaries/*/*.dll",
+      "binaries/*/*.dylib",
+      "binaries/*/*.so*"
     ]
   }
 }

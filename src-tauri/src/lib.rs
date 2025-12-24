@@ -10,7 +10,9 @@ use std::time::{Duration, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 
 mod compressor;
+mod vips_init;
 use compressor::compress_image_with_progress;
+use vips_init::{init_vips, shutdown_vips};
 
 // ============================================================================
 // Constants
@@ -916,6 +918,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
+            // Initialize libvips once at startup
+            init_vips();
+
             let app_handle = app.handle().clone();
             let persisted_tasks = load_tasks_from_disk();
 
@@ -964,6 +969,9 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Cleanup on shutdown
+    shutdown_vips();
 }
 
 /// Setup system tray

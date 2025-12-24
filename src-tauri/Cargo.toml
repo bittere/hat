@@ -41,3 +41,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "5"
 tauri-plugin-dialog = "2.0.0-rc.0"
 rfd = "0.16.0"
+rs-vips = { git = "https://github.com/mrdkprj/rs-vips" }

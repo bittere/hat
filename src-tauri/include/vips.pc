@@ -1,0 +1,10 @@
+prefix=C:\\Users\\SDC13\\Documents\\GitHub\\hat\\src-tauri
+exec_prefix=${prefix}
+libdir=${prefix}\\binaries\\x86_64-pc-windows-gnu
+includedir=${prefix}\\include
+
+Name: vips
+Description: Image processing library
+Version: 8.17.3
+Libs: -L${libdir} -lvips-42
+Cflags: -I${includedir}

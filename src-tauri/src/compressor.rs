@@ -1,6 +1,7 @@
 use image::ImageReader;
 use log::{info, warn};
 use oxipng::Options;
+use rs_vips::voption::{Setter, VOption};
 use std::fs;
 use std::path::Path;
 use tauri::AppHandle;
@@ -225,181 +226,174 @@ fn use_smaller_file(input: &Path, output: &Path, compressed_size: u64) -> Result
 // ============================================================================
 
 fn run_optimized_pngsave(
-    app_handle: &AppHandle,
+    _app_handle: &AppHandle,
     input: &Path,
     output: &Path,
     quality: u8,
 ) -> Result<u64> {
-    let q_value = quality.clamp(1, 100);
-    let colors = (PNG_MIN_COLORS + (q_value as f32 / 100.0) * PNG_COLOR_RANGE) as u8;
-
-    let q_arg = format!("--Q={}", q_value);
-    let colors_arg = format!("--colours={}", colors);
-
-    let args = vec![
-        "pngsave",
-        input
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
-        output
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
-        "--compression=9",
-        "--effort=10",
-        "--palette",
-        &q_arg,
-        &colors_arg,
-        "--dither=1",
-    ];
-
-    info!("vips pngsave: {}", args.join(" "));
-    execute_vips(app_handle, &args, output)
-}
-
-fn run_optimized_jpegsave(
-    app_handle: &AppHandle,
-    input: &Path,
-    output: &Path,
-    quality: u8,
-) -> Result<u64> {
-    let q_value = quality.clamp(1, 100);
-    let q_arg = format!("--Q={}", q_value);
-
-    let args = vec![
-        "jpegsave",
-        input
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
-        output
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
-        &q_arg,
-        "--strip=true",
-        "--optimize-coding=true",
-        "--interlace=true",
-    ];
-
-    info!("vips jpegsave (Q={}): {}", quality, args.join(" "));
-    execute_vips(app_handle, &args, output)
-}
-
-fn run_optimized_webpsave(
-    app_handle: &AppHandle,
-    input: &Path,
-    output: &Path,
-    quality: u8,
-) -> Result<u64> {
-    let q_value = quality.clamp(1, 100);
-    let q_arg = format!("--Q={}", q_value);
-
-    let args = vec![
-        "webpsave",
-        input
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
-        output
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
-        &q_arg,
-        "--strip=true",
-        "--mixed=true",
-    ];
-
-    info!("vips webpsave (Q={}): {}", quality, args.join(" "));
-    execute_vips(app_handle, &args, output)
-}
-
-fn run_optimized_gifsave(app_handle: &AppHandle, input: &Path, output: &Path) -> Result<u64> {
     let input_str = input
         .to_str()
         .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?;
-    let input_frames = format!("{}[n=-1]", input_str);
+    let output_str = output
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?;
 
-    let args = vec![
-        "gifsave",
-        &input_frames,
-        output
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
-        "--bitdepth=7",
-        "--dither=0",
-    ];
+    let q_value = quality.clamp(1, 100) as i32;
+    let colors = (PNG_MIN_COLORS + (quality as f32 / 100.0) * PNG_COLOR_RANGE) as i32;
 
-    info!("vips gifsave: {}", args.join(" "));
-    execute_vips(app_handle, &args, output)
-}
+    info!(
+        "libvips pngsave: input={}, output={}, quality={}, colors={}",
+        input_str, output_str, q_value, colors
+    );
 
-fn run_optimized_tiffsave(app_handle: &AppHandle, input: &Path, output: &Path) -> Result<u64> {
-    let args = vec![
-        "tiffsave",
-        input
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
-        output
-            .to_str()
-            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
-        "--compression=jpeg",
-        "--strip",
-    ];
-
-    info!("vips tiffsave: {}", args.join(" "));
-    execute_vips(app_handle, &args, output)
-}
-
-/// Execute vips command with proper PATH setup and error handling
-fn execute_vips(app_handle: &AppHandle, args: &[&str], output: &Path) -> Result<u64> {
-    use std::env;
-    use tauri_plugin_shell::ShellExt;
-
-    // Setup PATH for binaries (cross-platform)
-    let path_separator = if cfg!(windows) { ";" } else { ":" };
-    let binary_paths = if cfg!(windows) {
-        vec!["src-tauri\\binaries", ".\\binaries"]
-    } else {
-        vec!["src-tauri/binaries", "./binaries"]
-    };
-
-    let mut path_var = env::var("PATH").unwrap_or_default();
-    for bin_path in binary_paths {
-        if !path_var.contains(bin_path) {
-            path_var = format!("{}{}{}", bin_path, path_separator, path_var);
-        }
-    }
-
-    let output_result = tauri::async_runtime::block_on(async {
-        let mut cmd = app_handle
-            .shell()
-            .sidecar("vips")
-            .map_err(|e| CompressionError::Vips(e.to_string()))?;
-        cmd = cmd.env("PATH", path_var);
-        cmd.args(args)
-            .output()
-            .await
-            .map_err(|e| CompressionError::Vips(e.to_string()))
-    })?;
-
-    let stdout = String::from_utf8_lossy(&output_result.stdout);
-    let stderr = String::from_utf8_lossy(&output_result.stderr);
-
-    if !stdout.is_empty() {
-        info!("vips stdout: {}", stdout);
-    }
-    if !stderr.is_empty() {
-        warn!("vips stderr: {}", stderr);
-    }
-
-    if !output_result.status.success() {
-        return Err(CompressionError::Vips(format!(
-            "vips failed (code {:?}): {}",
-            output_result.status.code(),
-            stderr
-        )));
-    }
+    rs_vips::VipsImage::new_from_file(input_str)
+        .map_err(|e| CompressionError::Vips(format!("Failed to load image: {}", e)))
+        .and_then(|image| {
+            let opts = VOption::new()
+                .set("compression", 9 as i32)
+                .set("effort", 10 as i32)
+                .set("palette", true)
+                .set("Q", q_value)
+                .set("colours", colors)
+                .set("dither", 1.0);
+            image
+                .pngsave_with_opts(output_str, opts)
+                .map_err(|e| CompressionError::Vips(format!("Failed to save PNG: {}", e)))
+        })?;
 
     let size = fs::metadata(output)?.len();
-    info!("libvips success: {} bytes", size);
+    info!("libvips PNG compression success: {} bytes", size);
     Ok(size)
 }
+
+fn run_optimized_jpegsave(
+    _app_handle: &AppHandle,
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64> {
+    let input_str = input
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?;
+    let output_str = output
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?;
+
+    let q_value = quality.clamp(1, 100) as i32;
+
+    info!(
+        "libvips jpegsave: input={}, output={}, quality={}",
+        input_str, output_str, q_value
+    );
+
+    rs_vips::VipsImage::new_from_file(input_str)
+        .map_err(|e| CompressionError::Vips(format!("Failed to load image: {}", e)))
+        .and_then(|image| {
+            let opts = VOption::new()
+                .set("Q", q_value)
+                .set("strip", true)
+                .set("optimize_coding", true)
+                .set("interlace", true);
+            image
+                .jpegsave_with_opts(output_str, opts)
+                .map_err(|e| CompressionError::Vips(format!("Failed to save JPEG: {}", e)))
+        })?;
+
+    let size = fs::metadata(output)?.len();
+    info!("libvips JPEG compression success: {} bytes", size);
+    Ok(size)
+}
+
+fn run_optimized_webpsave(
+    _app_handle: &AppHandle,
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64> {
+    let input_str = input
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?;
+    let output_str = output
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?;
+
+    let q_value = quality.clamp(1, 100) as i32;
+
+    info!(
+        "libvips webpsave: input={}, output={}, quality={}",
+        input_str, output_str, q_value
+    );
+
+    rs_vips::VipsImage::new_from_file(input_str)
+        .map_err(|e| CompressionError::Vips(format!("Failed to load image: {}", e)))
+        .and_then(|image| {
+            let opts = VOption::new()
+                .set("Q", q_value)
+                .set("strip", true)
+                .set("mixed", true);
+            image
+                .webpsave_with_opts(output_str, opts)
+                .map_err(|e| CompressionError::Vips(format!("Failed to save WebP: {}", e)))
+        })?;
+
+    let size = fs::metadata(output)?.len();
+    info!("libvips WebP compression success: {} bytes", size);
+    Ok(size)
+}
+
+fn run_optimized_gifsave(_app_handle: &AppHandle, input: &Path, output: &Path) -> Result<u64> {
+    let input_str = input
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?;
+    let output_str = output
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?;
+
+    info!("libvips gifsave: input={}, output={}", input_str, output_str);
+
+    rs_vips::VipsImage::new_from_file(input_str)
+        .map_err(|e| CompressionError::Vips(format!("Failed to load image: {}", e)))
+        .and_then(|image| {
+            let opts = VOption::new()
+                .set("bitdepth", 7 as i32)
+                .set("dither", 0 as i32);
+            image
+                .gifsave_with_opts(output_str, opts)
+                .map_err(|e| CompressionError::Vips(format!("Failed to save GIF: {}", e)))
+        })?;
+
+    let size = fs::metadata(output)?.len();
+    info!("libvips GIF compression success: {} bytes", size);
+    Ok(size)
+}
+
+fn run_optimized_tiffsave(_app_handle: &AppHandle, input: &Path, output: &Path) -> Result<u64> {
+    let input_str = input
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?;
+    let output_str = output
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?;
+
+    info!("libvips tiffsave: input={}, output={}", input_str, output_str);
+
+    rs_vips::VipsImage::new_from_file(input_str)
+        .map_err(|e| CompressionError::Vips(format!("Failed to load image: {}", e)))
+        .and_then(|image| {
+            let opts = VOption::new()
+                .set("compression", "jpeg")
+                .set("strip", true);
+            image
+                .tiffsave_with_opts(output_str, opts)
+                .map_err(|e| CompressionError::Vips(format!("Failed to save TIFF: {}", e)))
+        })?;
+
+    let size = fs::metadata(output)?.len();
+    info!("libvips TIFF compression success: {} bytes", size);
+    Ok(size)
+}
+
+
 
 // ============================================================================
 // Rust Fallback Implementations

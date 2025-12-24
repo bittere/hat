@@ -1,0 +1,2 @@
+[env]
+VIPS_NO_PKG_CONFIG = "1"

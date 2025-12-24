@@ -1855,6 +1855,7 @@ dependencies = [
  "notify",
  "oxipng",
  "rfd 0.16.0",
+ "rs-vips",
  "serde",
  "serde_json",
  "tauri",
@@ -4034,6 +4035,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "rs-vips"
+version = "0.2.2"
+source = "git+https://github.com/mrdkprj/rs-vips#361a9cd276e6068f935970690d42e6fe05b62f2f"
+dependencies = [
+ "num-derive",
+ "num-traits",
 ]
 
 [[package]]
