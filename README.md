@@ -6,7 +6,7 @@
 
 Hat runs in the background and watches a configurable list of folders for new images. By default, Hat only looks at your `Downloads` folder. When a new image arrives, it automatically compresses it and saves it with as with a `(...)_compressed` suffix in the same folder. Compression quality is configurable.
 
-Hat can work with most common file types, including PNG, JPG/JPEG/JFIF, WEBP and GIF. Support for more file types & format conversion is in planned.
+Hat can work with most common file types, including PNG, JPG/JPEG/JFIF, WebP, TIFF, and GIF. Support for more file types & format conversion is planned.
 
 Hat will always be free and will try to balance being delightful to use but powerful.
 

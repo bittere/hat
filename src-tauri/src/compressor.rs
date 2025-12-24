@@ -1,423 +1,434 @@
-use image::{GenericImageView, ImageFormat, ImageReader};
-use log::{error, info, warn};
-use oxipng::{BitDepth, ColorType as OxiColorType, Options, RawImage};
+use image::ImageReader;
+use log::{info, warn};
+use oxipng::Options;
 use std::fs;
 use std::path::Path;
 use tauri::AppHandle;
 
-type ProgressCallback = Box<dyn Fn(u32) -> Result<(), Box<dyn std::error::Error>>>;
+// Constants
+const PNG_MIN_COLORS: f32 = 129.0;
+const PNG_MAX_COLORS: f32 = 256.0;
+const PNG_COLOR_RANGE: f32 = PNG_MAX_COLORS - PNG_MIN_COLORS;
+const DEFAULT_PNG_COMPRESSION: u8 = 6;
 
-pub fn compress_image(
-    app_handle: &AppHandle,
-    input: &Path,
-    output: &Path,
-    quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    compress_image_internal(app_handle, input, output, quality, None)
+// Custom error type for better error handling
+#[derive(Debug)]
+pub enum CompressionError {
+    Io(std::io::Error),
+    Image(image::ImageError),
+    Vips(String),
+    InvalidPath(String),
+    UnsupportedFormat(String),
 }
 
-fn compress_image_internal(
+impl std::fmt::Display for CompressionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "IO error: {}", e),
+            Self::Image(e) => write!(f, "Image processing error: {}", e),
+            Self::Vips(e) => write!(f, "libvips error: {}", e),
+            Self::InvalidPath(p) => write!(f, "Invalid path: {}", p),
+            Self::UnsupportedFormat(fmt) => write!(f, "Unsupported format: {}", fmt),
+        }
+    }
+}
+
+impl std::error::Error for CompressionError {}
+
+impl From<std::io::Error> for CompressionError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<image::ImageError> for CompressionError {
+    fn from(err: image::ImageError) -> Self {
+        Self::Image(err)
+    }
+}
+
+type Result<T> = std::result::Result<T, CompressionError>;
+
+/// Compress image with progress callback.
+/// Returns compressed file size in bytes.
+pub fn compress_image_with_progress<F>(
     app_handle: &AppHandle,
     input: &Path,
     output: &Path,
     quality: u8,
-    progress_callback: Option<ProgressCallback>,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    // Sidecar-based JPEG encoding (bundled) with Rust fallback
+    on_progress: F,
+) -> Result<u64>
+where
+    F: Fn(u32) + Send + 'static,
+{
+    compress_image_with_compression_and_progress(
+        app_handle,
+        input,
+        output,
+        quality,
+        None,
+        on_progress,
+    )
+}
 
+/// Enhanced compression with libvips optimization.
+///
+/// # Arguments
+/// * `compression` - PNG compression level 0-9 (optional, only affects fallback)
+pub fn compress_image_with_compression_and_progress<F>(
+    app_handle: &AppHandle,
+    input: &Path,
+    output: &Path,
+    quality: u8,
+    compression: Option<u8>,
+    on_progress: F,
+) -> Result<u64>
+where
+    F: Fn(u32) + Send + 'static,
+{
+    on_progress(0);
+
+    // Validate input
+    if !input.exists() {
+        return Err(CompressionError::InvalidPath(format!(
+            "Input file does not exist: {}",
+            input.display()
+        )));
+    }
+
+    // Ensure output directory exists
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    on_progress(5);
+
+    let size = compress_image_internal(
+        app_handle,
+        input,
+        output,
+        quality,
+        compression,
+        Some(&on_progress),
+    )?;
+
+    on_progress(100);
+    Ok(size)
+}
+
+fn compress_image_internal<F>(
+    app_handle: &AppHandle,
+    input: &Path,
+    output: &Path,
+    quality: u8,
+    compression: Option<u8>,
+    on_progress: Option<&F>,
+) -> Result<u64>
+where
+    F: Fn(u32),
+{
     let ext = input
         .extension()
-        .ok_or("No file extension")?
-        .to_string_lossy()
-        .to_lowercase();
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .ok_or_else(|| {
+            CompressionError::InvalidPath(format!("No file extension: {}", input.display()))
+        })?;
 
-    info!("Compressing {} file: {:?}", ext, input);
-    
-    if let Some(ref cb) = progress_callback {
-        let _ = cb(10); // Initial progress
+    info!("Compressing {}: {:?}", ext, input);
+
+    if let Some(cb) = on_progress {
+        cb(10);
     }
 
-    /*
-    // Try sidecar-based JPEG encoding first, then fallback to Rust path
-    if ext.as_str() == "jpg" || ext.as_str() == "jpeg" {
-        if let Ok(size) = run_imagemagick_encode(input, output, 60) {
-            info!("JPEG compressed via sidecar: {} bytes", size);
-            return Ok(size);
-        }
-    }
-    */
-
-    // Try libvips sidecar first for JPEG/PNG/WebP/GIF, fallback to Rust path
-    // GIFs: vips handles with [n=-1] to preserve all animation frames
+    // Try libvips first, fall back to Rust if it fails
     let result = match ext.as_str() {
-        "jpg" | "jpeg" | "jfif" | "png" | "webp" | "gif" => {
-            match run_vips(app_handle, input, output, quality) {
-                Ok(size) => {
-                    if let Some(ref cb) = progress_callback {
-                        let _ = cb(90); // 90% before final completion
-                    }
-                    Ok(size)
-                },
-                Err(e) => {
-                    warn!(
-                        "libvips sidecar failed: {}, falling back to Rust implementation",
-                        e
-                    );
-                    match ext.as_str() {
-                        "jpg" | "jpeg" | "jfif" => compress_jpeg(input, output, quality),
-                        "png" => compress_png(input, output, quality),
-                        "webp" => compress_webp(input, output, quality),
-                        "gif" => compress_gif(input, output, quality),
-                        _ => Err(e),
-                    }
-                }
-            }
-        }
-        "bmp" | "tiff" | "tif" => compress_png(input, output, quality),
-        _ => Err("Unsupported format".into()),
+        "jpg" | "jpeg" | "jfif" => compress_with_fallback(
+            || run_optimized_jpegsave(app_handle, input, output, quality),
+            || compress_jpeg_fallback(input, output, quality),
+            input,
+            output,
+        ),
+        "png" => compress_with_fallback(
+            || run_optimized_pngsave(app_handle, input, output, quality),
+            || compress_png_fallback(input, output, compression),
+            input,
+            output,
+        ),
+        "webp" => compress_with_fallback(
+            || run_optimized_webpsave(app_handle, input, output, quality),
+            || compress_copy_fallback(input, output),
+            input,
+            output,
+        ),
+        "gif" => compress_with_fallback(
+            || run_optimized_gifsave(app_handle, input, output),
+            || compress_copy_fallback(input, output),
+            input,
+            output,
+        ),
+        "tiff" | "tif" => compress_with_fallback(
+            || run_optimized_tiffsave(app_handle, input, output),
+            || compress_copy_fallback(input, output),
+            input,
+            output,
+        ),
+        _ => Err(CompressionError::UnsupportedFormat(ext)),
     };
 
-    match result {
-        Ok(size) => {
-            if let Some(ref cb) = progress_callback {
-                let _ = cb(95); // Near completion
-            }
-            Ok(size)
-        },
+    if let Some(cb) = on_progress {
+        cb(95);
+    }
+
+    result
+}
+
+/// Helper to try libvips first, then fall back to Rust implementation
+fn compress_with_fallback<V, R>(
+    vips_fn: V,
+    fallback_fn: R,
+    input: &Path,
+    output: &Path,
+) -> Result<u64>
+where
+    V: FnOnce() -> Result<u64>,
+    R: FnOnce() -> Result<u64>,
+{
+    match vips_fn() {
+        Ok(size) => use_smaller_file(input, output, size),
         Err(e) => {
-            warn!(
-                "All primary compression methods failed: {}, trying basic fallback",
-                e
-            );
-            let size = compress_with_fallback(input, output, &ext, quality)?;
-            if let Some(ref cb) = progress_callback {
-                let _ = cb(95);
-            }
-            Ok(size)
+            warn!("libvips failed: {}, using Rust fallback", e);
+            let size = fallback_fn()?;
+            use_smaller_file(input, output, size)
         }
     }
 }
 
-fn run_vips(
+/// Ensures the output file is not larger than the input
+fn use_smaller_file(input: &Path, output: &Path, compressed_size: u64) -> Result<u64> {
+    let original_size = fs::metadata(input)?.len();
+
+    if compressed_size > original_size {
+        info!(
+            "Compressed size ({}) > original size ({}), using original",
+            compressed_size, original_size
+        );
+        fs::copy(input, output)?;
+        Ok(original_size)
+    } else {
+        Ok(compressed_size)
+    }
+}
+
+// ============================================================================
+// libvips Operations
+// ============================================================================
+
+fn run_optimized_pngsave(
     app_handle: &AppHandle,
     input: &Path,
     output: &Path,
     quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    info!("Running libvips sidecar for: {:?}", input);
+) -> Result<u64> {
+    let q_value = quality.clamp(1, 100);
+    let colors = (PNG_MIN_COLORS + (q_value as f32 / 100.0) * PNG_COLOR_RANGE) as u8;
 
-    use tauri_plugin_shell::ShellExt;
-    use std::env;
+    let q_arg = format!("--Q={}", q_value);
+    let colors_arg = format!("--colours={}", colors);
 
-    let input_str = input.to_str().ok_or("Invalid input path")?;
-    let output_str = output.to_str().ok_or("Invalid output path")?;
-    
-    let ext = input
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-
-    // Set PATH to include binaries directory for DLL resolution
-    let binaries_paths = vec![
-        "src-tauri\\binaries",  // Development mode path
-        ".\\binaries",           // Alternative dev path
+    let args = vec![
+        "pngsave",
+        input
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
+        output
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
+        "--compression=9",
+        "--effort=10",
+        "--palette",
+        &q_arg,
+        &colors_arg,
+        "--dither=1",
     ];
 
-    let mut path_var = env::var("PATH").unwrap_or_default();
-    for bin_path in binaries_paths {
-        if !path_var.contains(bin_path) {
-            path_var = format!("{};{}", bin_path, path_var);
-        }
-    }
-
-    // GIFs need special handling with gifsave command
-    if ext == "gif" {
-        let input_with_frames = format!("{}[n=-1]", input_str);
-        // Map quality 0-100 to bitdepth 1-8 (lower quality = fewer colors = smaller file)
-        let bitdepth = std::cmp::max(1, ((quality as f32 / 100.0) * 8.0) as u8);
-        
-        info!(
-            "vips gifsave '{}' '{}' --bitdepth {}",
-            input_with_frames, output_str, bitdepth
-        );
-
-        let output_result = tauri::async_runtime::block_on(async {
-            let mut cmd = app_handle
-                .shell()
-                .sidecar("vips")
-                .map_err(|e| {
-                    error!("Failed to create vips sidecar: {}", e);
-                    format!("Failed to create sidecar: {}", e)
-                })?;
-
-            info!("Setting PATH for vips execution: {}", path_var);
-            cmd = cmd.env("PATH", path_var);
-
-            cmd.args([
-                "gifsave",
-                &input_with_frames,
-                output_str,
-                "--bitdepth",
-                &bitdepth.to_string(),
-            ])
-            .output()
-            .await
-            .map_err(|e| {
-                error!("Failed to execute vips gifsave: {}", e);
-                format!("Failed to execute vips: {}", e)
-            })
-        })?;
-
-        let stdout = String::from_utf8_lossy(&output_result.stdout);
-        let stderr = String::from_utf8_lossy(&output_result.stderr);
-
-        info!("vips gifsave stdout: {}", stdout);
-        if !stderr.is_empty() {
-            warn!("vips gifsave stderr: {}", stderr);
-        }
-
-        if !output_result.status.success() {
-            let error_msg = format!(
-                "vips gifsave failed with exit code {:?}: {}",
-                output_result.status.code(),
-                stderr
-            );
-            error!("{}", error_msg);
-            return Err(error_msg.into());
-        }
-        
-        // Check if compression actually reduced file size; if not, just copy original
-        let output_size = fs::metadata(output)?.len();
-        let input_size = fs::metadata(input)?.len();
-        if output_size > input_size {
-            warn!("GIF recompression increased file size ({} → {}), using original", input_size, output_size);
-            fs::copy(input, output)?;
-        }
-    } else {
-        // For JPEG/PNG/WebP, use copy with Q parameter
-        let output_with_quality = format!("{}[Q={}]", output_str, quality);
-
-        info!(
-            "vips copy '{}' '{}'",
-            input_str, output_with_quality
-        );
-
-        let output_result = tauri::async_runtime::block_on(async {
-            let mut cmd = app_handle
-                .shell()
-                .sidecar("vips")
-                .map_err(|e| {
-                    error!("Failed to create vips sidecar: {}", e);
-                    format!("Failed to create sidecar: {}", e)
-                })?;
-
-            info!("Setting PATH for vips execution: {}", path_var);
-            cmd = cmd.env("PATH", path_var);
-
-            cmd.args(["copy", input_str, &output_with_quality])
-                .output()
-                .await
-                .map_err(|e| {
-                    error!("Failed to execute vips: {}", e);
-                    format!("Failed to execute vips: {}", e)
-                })
-        })?;
-
-        let stdout = String::from_utf8_lossy(&output_result.stdout);
-        let stderr = String::from_utf8_lossy(&output_result.stderr);
-
-        info!("vips stdout: {}", stdout);
-        if !stderr.is_empty() {
-            warn!("vips stderr: {}", stderr);
-        }
-
-        if !output_result.status.success() {
-            let error_msg = format!(
-                "vips failed with exit code {:?}: {}",
-                output_result.status.code(),
-                stderr
-            );
-            error!("{}", error_msg);
-            return Err(error_msg.into());
-        }
-    }
-
-    // Get the output file size
-    let size = fs::metadata(output)?.len();
-    info!("libvips compressed successfully, size: {}", size);
-    Ok(size)
+    info!("vips pngsave: {}", args.join(" "));
+    execute_vips(app_handle, &args, output)
 }
 
-fn compress_gif(
-    input: &Path,
-    output: &Path,
-    _quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    info!("Processing GIF (fallback): {:?}", input);
-
-    // Fallback when libvips fails.
-    // vips is the only reliable way to compress GIFs while preserving animation.
-    // The Rust image crate only decodes the first frame of animated GIFs.
-    // As a last resort, just copy the file.
-    warn!("libvips unavailable for GIF, copying to preserve animation");
-    fs::copy(input, output)?;
-
-    let size = fs::metadata(output)?.len();
-    info!("GIF copied (fallback), size: {}", size);
-    Ok(size)
-}
-
-
-fn compress_webp(
+fn run_optimized_jpegsave(
+    app_handle: &AppHandle,
     input: &Path,
     output: &Path,
     quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    info!("Compressing WebP natively via webp crate: {:?}", input);
+) -> Result<u64> {
+    let q_value = quality.clamp(1, 100);
+    let q_arg = format!("--Q={}", q_value);
 
-    let img = ImageReader::open(input)?.decode()?;
-    let (width, height) = img.dimensions();
+    let args = vec![
+        "jpegsave",
+        input
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
+        output
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
+        &q_arg,
+        "--strip=true",
+        "--optimize-coding=true",
+        "--interlace=true",
+    ];
 
-    let webp_data = if img.color().has_alpha() {
-        let rgba = img.to_rgba8();
-        let encoder = webp::Encoder::from_rgba(&rgba, width, height);
-        encoder.encode(quality as f32)
+    info!("vips jpegsave (Q={}): {}", quality, args.join(" "));
+    execute_vips(app_handle, &args, output)
+}
+
+fn run_optimized_webpsave(
+    app_handle: &AppHandle,
+    input: &Path,
+    output: &Path,
+    quality: u8,
+) -> Result<u64> {
+    let q_value = quality.clamp(1, 100);
+    let q_arg = format!("--Q={}", q_value);
+
+    let args = vec![
+        "webpsave",
+        input
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
+        output
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
+        &q_arg,
+        "--strip=true",
+        "--mixed=true",
+    ];
+
+    info!("vips webpsave (Q={}): {}", quality, args.join(" "));
+    execute_vips(app_handle, &args, output)
+}
+
+fn run_optimized_gifsave(app_handle: &AppHandle, input: &Path, output: &Path) -> Result<u64> {
+    let input_str = input
+        .to_str()
+        .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?;
+    let input_frames = format!("{}[n=-1]", input_str);
+
+    let args = vec![
+        "gifsave",
+        &input_frames,
+        output
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
+        "--bitdepth=7",
+        "--dither=0",
+    ];
+
+    info!("vips gifsave: {}", args.join(" "));
+    execute_vips(app_handle, &args, output)
+}
+
+fn run_optimized_tiffsave(app_handle: &AppHandle, input: &Path, output: &Path) -> Result<u64> {
+    let args = vec![
+        "tiffsave",
+        input
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(input.display().to_string()))?,
+        output
+            .to_str()
+            .ok_or_else(|| CompressionError::InvalidPath(output.display().to_string()))?,
+        "--compression=jpeg",
+        "--strip",
+    ];
+
+    info!("vips tiffsave: {}", args.join(" "));
+    execute_vips(app_handle, &args, output)
+}
+
+/// Execute vips command with proper PATH setup and error handling
+fn execute_vips(app_handle: &AppHandle, args: &[&str], output: &Path) -> Result<u64> {
+    use std::env;
+    use tauri_plugin_shell::ShellExt;
+
+    // Setup PATH for binaries (cross-platform)
+    let path_separator = if cfg!(windows) { ";" } else { ":" };
+    let binary_paths = if cfg!(windows) {
+        vec!["src-tauri\\binaries", ".\\binaries"]
     } else {
-        let rgb = img.to_rgb8();
-        let encoder = webp::Encoder::from_rgb(&rgb, width, height);
-        encoder.encode(quality as f32)
+        vec!["src-tauri/binaries", "./binaries"]
     };
 
-    fs::write(output, &*webp_data)?;
-    let size = webp_data.len() as u64;
-    info!("WebP compressed natively via webp crate, size: {}", size);
+    let mut path_var = env::var("PATH").unwrap_or_default();
+    for bin_path in binary_paths {
+        if !path_var.contains(bin_path) {
+            path_var = format!("{}{}{}", bin_path, path_separator, path_var);
+        }
+    }
+
+    let output_result = tauri::async_runtime::block_on(async {
+        let mut cmd = app_handle
+            .shell()
+            .sidecar("vips")
+            .map_err(|e| CompressionError::Vips(e.to_string()))?;
+        cmd = cmd.env("PATH", path_var);
+        cmd.args(args)
+            .output()
+            .await
+            .map_err(|e| CompressionError::Vips(e.to_string()))
+    })?;
+
+    let stdout = String::from_utf8_lossy(&output_result.stdout);
+    let stderr = String::from_utf8_lossy(&output_result.stderr);
+
+    if !stdout.is_empty() {
+        info!("vips stdout: {}", stdout);
+    }
+    if !stderr.is_empty() {
+        warn!("vips stderr: {}", stderr);
+    }
+
+    if !output_result.status.success() {
+        return Err(CompressionError::Vips(format!(
+            "vips failed (code {:?}): {}",
+            output_result.status.code(),
+            stderr
+        )));
+    }
+
+    let size = fs::metadata(output)?.len();
+    info!("libvips success: {} bytes", size);
     Ok(size)
 }
 
-fn compress_jpeg(
-    input: &Path,
-    output: &Path,
-    quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    info!("Compressing JPEG: {:?}", input);
+// ============================================================================
+// Rust Fallback Implementations
+// ============================================================================
 
-    // Attempt sidecar path first outside of in-code: handled in parent function
-    // Fallback to Rust-based encode (no resize)
+fn compress_jpeg_fallback(input: &Path, output: &Path, quality: u8) -> Result<u64> {
     let img = ImageReader::open(input)?.decode()?;
-    info!("Image decoded successfully");
-
-    // Fallback: encode without resizing
     let mut buffer = Vec::new();
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
     encoder.encode_image(&img)?;
     fs::write(output, &buffer)?;
-    let size = buffer.len() as u64;
-    info!("JPEG compressed (Rust fallback), size: {}", size);
-    Ok(size)
+    Ok(buffer.len() as u64)
 }
 
-fn compress_png(
-    input: &Path,
-    output: &Path,
-    quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    info!("Compressing PNG: {:?}", input);
-
-    // Get input extension and size metadata
-    let ext = input
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    let original_data = fs::read(input)?;
-
-    // Optimization: If already a PNG, optimize the data directly (keeps original dimensions)
-    if ext == "png" {
-        info!("PNG detected, optimizing directly...");
-        // Map 0-100 quality to oxipng optimization level (0-6)
-        let level = (6 - (quality as f32 / 100.0 * 6.0) as u8).min(6);
-        let options = Options::from_preset(level);
-        let optimized = oxipng::optimize_from_memory(&original_data, &options)?;
-        fs::write(output, &optimized)?;
-        return Ok(optimized.len() as u64);
-    }
-
-    // For other formats (e.g. converting WebP to PNG), decode and optimize from raw pixels
-    let img = ImageReader::new(std::io::Cursor::new(&original_data))
-        .with_guessed_format()?
-        .decode()?;
-    let (w, h) = img.dimensions();
-
-    // Convert to RGBA8 for oxipng
-    let rgba = img.to_rgba8();
-    let raw = RawImage::new(w, h, OxiColorType::RGBA, BitDepth::Eight, rgba.into_raw())?;
-
-    info!(
-        "Generating optimized PNG from raw pixels (original dimensions: {}x{})...",
-        w, h
-    );
-    let level = (6 - (quality as f32 / 100.0 * 6.0) as u8).min(6);
-    let options = Options::from_preset(level);
-    let optimized = raw.create_optimized_png(&options)?;
-
-    info!("Writing final output: {:?}", output);
+fn compress_png_fallback(input: &Path, output: &Path, compression: Option<u8>) -> Result<u64> {
+    let data = fs::read(input)?;
+    let comp_level = compression.unwrap_or(DEFAULT_PNG_COMPRESSION).min(6);
+    let options = Options::from_preset(comp_level);
+    let optimized = oxipng::optimize_from_memory(&data, &options).map_err(|e| {
+        CompressionError::Image(image::ImageError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e.to_string(),
+        )))
+    })?;
     fs::write(output, &optimized)?;
-
-    let size = optimized.len() as u64;
-    info!("PNG compression complete, final size: {} bytes", size);
-    Ok(size)
+    Ok(optimized.len() as u64)
 }
 
-fn compress_with_fallback(
-    input: &Path,
-    output: &Path,
-    ext: &str,
-    quality: u8,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    info!("Using fallback compression for: {:?}", input);
-
-    // Simple copy with basic size reduction as fallback
-    let metadata = fs::metadata(input)?;
-    let original_size = metadata.len();
-
-    // For very small files, just copy them
-    if original_size < 1024 * 100 {
-        // 100KB
-        fs::copy(input, output)?;
-        return Ok(original_size);
-    }
-
-    // Try to read and write a smaller version
-    match ext {
-        "jpg" | "jpeg" => {
-            // Try simple image crate operations
-            if let Ok(img) = ImageReader::open(input).and_then(|r| {
-                r.decode()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-            }) {
-                let mut buffer = Vec::new();
-                let mut encoder =
-                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
-                if encoder.encode_image(&img).is_ok() {
-                    fs::write(output, &buffer)?;
-                    return Ok(buffer.len() as u64);
-                }
-            }
-        }
-        "png" => {
-            if let Ok(img) = ImageReader::open(input).and_then(|r| {
-                r.decode()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-            }) {
-                if img.save_with_format(output, ImageFormat::Png).is_ok() {
-                    return Ok(fs::metadata(output)?.len());
-                }
-            }
-        }
-        _ => {}
-    }
-
-    // Last resort: just copy the file
-    error!("All compression methods failed, copying file");
+fn compress_copy_fallback(input: &Path, output: &Path) -> Result<u64> {
     fs::copy(input, output)?;
     Ok(fs::metadata(output)?.len())
 }

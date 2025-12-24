@@ -181,7 +181,7 @@ function App() {
 
   const handleRecompress = async (taskId: string) => {
     try {
-      await invoke("recompress_file", { task_id: taskId });
+      await invoke("recompress_file", { originalTaskId: taskId });
     } catch (error) {
       console.error("Failed to recompress file:", error);
     }
@@ -193,6 +193,20 @@ function App() {
       console.log("Task deleted");
     } catch (error) {
       console.error("Failed to delete task:", error);
+    }
+  };
+
+  const handleDeleteAllJobs = async () => {
+    if (!window.confirm(`Are you sure you want to delete all ${tasks.length} jobs? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      for (const task of tasks) {
+        await invoke("delete_task", { id: task.id });
+      }
+      console.log("All jobs deleted");
+    } catch (error) {
+      console.error("Failed to delete all jobs:", error);
     }
   };
 
@@ -239,7 +253,7 @@ function App() {
           {tasks.length === 0 ? (
             <div className="empty-state">
               <p>Waiting for images in folders...</p>
-              <small>Supported formats: JPG, PNG, WebP, JFIF, BMP, TIFF, GIF</small>
+              <small>Supported formats: JPG, PNG, WebP, JFIF, TIFF, GIF</small>
             </div>
           ) : (
             <>
@@ -253,28 +267,35 @@ function App() {
                   <span className="value">{formatBytes(totalSavings)}</span>
                 </div>
                 <div className="stat actions">
-                  <span className="label">Queue Actions</span>
-                  <div className="action-buttons">
-                    <button
-                      onClick={handleClearCompleted}
-                      className="btn-secondary"
-                      disabled={completedCount === 0}
-                    >
-                      Clear Queue
-                    </button>
-                    <button
-                      onClick={handleDeleteOriginals}
-                      className="btn-danger"
-                      disabled={completedCount === 0}
-                    >
-                      Delete Originals
-                    </button>
-                  </div>
-                </div>
+                   <span className="label">Queue Actions</span>
+                   <div className="action-buttons">
+                     <button
+                       onClick={handleClearCompleted}
+                       className="btn-secondary"
+                       disabled={completedCount === 0}
+                     >
+                       Clear Queue
+                     </button>
+                     <button
+                       onClick={handleDeleteOriginals}
+                       className="btn-danger"
+                       disabled={completedCount === 0}
+                     >
+                       Delete Originals
+                     </button>
+                     <button
+                       onClick={handleDeleteAllJobs}
+                       className="btn-danger"
+                       disabled={tasks.length === 0}
+                     >
+                       Delete All Jobs
+                     </button>
+                   </div>
+                 </div>
               </div>
 
               <div className="tasks-list">
-                {tasks.map((task) => (
+                {[...tasks].sort((a, b) => b.id.localeCompare(a.id)).map((task) => (
                   <div key={task.id} className={`task ${task.status}`}>
                     <div className="task-info">
                       <p className="task-filename">{task.filename}</p>
