@@ -9,6 +9,11 @@ const VENDOR_DIR = join(ROOT, "vendor", "libvips");
 const STAGE_DIR = join(ROOT, "src-tauri", "libvips");
 
 function getTargetDouble(): string {
+  // Allow override via environment variable (e.g., "darwin-x64", "linux-x64")
+  if (process.env.LIBVIPS_TARGET) {
+    return process.env.LIBVIPS_TARGET;
+  }
+
   const platformMap: Record<string, string> = {
     win32: "win32",
     darwin: "darwin",
