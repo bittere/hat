@@ -1,4 +1,4 @@
-import { MoonIcon, SunIcon } from "lucide-react";
+import { Moon, Sun } from "@solar-icons/react-perf/Bold";
 import { Toggle } from "@/components/ui/toggle";
 import { useTheme } from "@/components/theme-provider";
 
@@ -18,7 +18,7 @@ export function ThemeToggle() {
       size="sm"
       aria-label="Toggle theme"
     >
-      {isDark ? <MoonIcon /> : <SunIcon />}
+      {isDark ? <Moon /> : <Sun />}
     </Toggle>
   );
 }
