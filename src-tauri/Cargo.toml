@@ -1,6 +1,6 @@
 [package]
 name = "hat"
-version = "0.3.0"
+version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -12,33 +12,23 @@ edition = "2021"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "hat_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-tauri-plugin-store = "2"
-tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["full"] }
-notify = "6"
-image = { version = "0.25", features = [
-  "jpeg",
-  "png",
-  "webp",
-  "tiff",
-  "gif",
-] }
-oxipng = "9"
-webp = "0.3"
-log = "0.4"
-env_logger = "0.11"
-uuid = { version = "1", features = ["v4", "serde"] }
-dirs = "5"
-tauri-plugin-dialog = "2.0.0-rc.0"
-rfd = "0.16.0"
-rs-vips = { git = "https://github.com/mrdkprj/rs-vips" }
+
+[profile.dev]
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = true # Ensures debug symbols are removed.

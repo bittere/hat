@@ -22,7 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-src-tauri/binaries/*
-src-tauri/include/*
-temp_libvips/*
