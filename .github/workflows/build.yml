@@ -30,11 +30,6 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -51,6 +46,8 @@ jobs:
 
       - name: Setup libvips
         run: bun run setup:libvips
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: tauri-apps/tauri-action@v0
         env:

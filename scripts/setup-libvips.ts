@@ -32,9 +32,13 @@ function getTargetDouble(): string {
 }
 
 async function getLatestDownloadUrl(): Promise<{ url: string; tag: string }> {
+  const headers: Record<string, string> = { Accept: "application/vnd.github+json" };
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
   const res = await fetch(
     `https://api.github.com/repos/${REPO}/releases/latest`,
-    { headers: { Accept: "application/vnd.github+json" } },
+    { headers },
   );
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   const release = (await res.json()) as { tag_name: string; assets: { name: string; browser_download_url: string }[] };
