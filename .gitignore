@@ -25,3 +25,6 @@ dist-ssr
 
 # Downloaded libvips binaries
 vendor/libvips/
+
+# .tsbuildinfo files
+*.tsbuildinfo
