@@ -2,8 +2,8 @@ name: Build
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - rewrite/prebuilt-libvips
 
 jobs:
   build-tauri:
@@ -57,9 +57,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bun tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: "Hat ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install."
-          releaseDraft: true
-          prerelease: false
+          # tagName: ${{ github.ref_name }}
+          # releaseName: "Hat ${{ github.ref_name }}"
+          # releaseBody: "See the assets below to download and install."
+          # releaseDraft: true
+          # prerelease: false
           args: ${{ matrix.args }}
