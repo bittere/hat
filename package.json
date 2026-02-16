@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "setup:libvips": "bun run scripts/setup-libvips.ts",
+    "build:tauri": "bun run setup:libvips && bun run build"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
