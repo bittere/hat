@@ -1,9 +1,14 @@
+mod compression;
+
+use compression::{compressed_output_path, ImageFormat, Vips};
 use libloading::{Library, Symbol};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int};
-use std::path::PathBuf;
+use std::ffi::CStr;
+use std::os::raw::c_char;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -83,6 +88,10 @@ fn get_vips_status(app: tauri::AppHandle) -> VipsStatus {
         }
     };
 
+    // Only probe version — do NOT call vips_init/vips_shutdown here
+    // because the downloads watcher already holds an initialised Vips
+    // instance and on Windows LoadLibrary returns the same handle, so
+    // calling vips_shutdown would corrupt the watcher's state.
     let version = unsafe {
         lib.get::<Symbol<unsafe extern "C" fn() -> *const c_char>>(b"vips_version_string\0")
             .ok()
@@ -96,23 +105,7 @@ fn get_vips_status(app: tauri::AppHandle) -> VipsStatus {
             })
     };
 
-    let initialized = unsafe {
-        lib.get::<Symbol<unsafe extern "C" fn(*const c_char) -> c_int>>(b"vips_init\0")
-            .ok()
-            .map(|f| {
-                let name = CString::new("hat").unwrap();
-                f(name.as_ptr()) == 0
-            })
-            .unwrap_or(false)
-    };
-
-    if initialized {
-        unsafe {
-            if let Ok(f) = lib.get::<Symbol<unsafe extern "C" fn()>>(b"vips_shutdown\0") {
-                f();
-            }
-        }
-    }
+    let initialized = version.is_some();
 
     VipsStatus {
         loaded: true,
@@ -129,10 +122,39 @@ struct NewFile {
     path: String,
 }
 
+const DEFAULT_QUALITY: u8 = 80;
+
+static QUALITY: AtomicU8 = AtomicU8::new(DEFAULT_QUALITY);
+
+#[tauri::command]
+fn set_quality(value: u8) -> u8 {
+    let clamped = value.clamp(1, 100);
+    let previous = QUALITY.swap(clamped, Ordering::Relaxed);
+    println!("[compression] Quality changed: {previous} → {clamped}");
+    clamped
+}
+
+#[tauri::command]
+fn get_quality() -> u8 {
+    QUALITY.load(Ordering::Relaxed)
+}
+
 fn start_downloads_watcher(app: &tauri::AppHandle) {
     let Some(downloads_dir) = dirs::download_dir() else {
         eprintln!("Could not determine downloads directory");
         return;
+    };
+
+    let lib_path = get_lib_path(app);
+    let vips = match unsafe { Vips::new(&lib_path) } {
+        Ok(v) => {
+            println!("[compression] libvips loaded from {}", lib_path.display());
+            Some(Arc::new(v))
+        }
+        Err(e) => {
+            eprintln!("[compression] Failed to load libvips, auto-compression disabled: {e}");
+            None
+        }
     };
 
     let handle = app.clone();
@@ -145,13 +167,58 @@ fn start_downloads_watcher(app: &tauri::AppHandle) {
             );
             if dominated {
                 for path in &event.paths {
-                    println!("[downloads-watcher] File detected ({:?}): {}", event.kind, path.display());
+                    let file_path = Path::new(path);
+
+                    // Skip files that are already compressed outputs
+                    if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
+                        if stem.ends_with("_compressed") {
+                            println!("[downloads-watcher] Skipping compressed file: {}", path.display());
+                            continue;
+                        }
+                    }
+
+                    let format = ImageFormat::from_path(file_path);
+                    println!(
+                        "[downloads-watcher] File detected ({:?}): {} [format: {:?}]",
+                        event.kind,
+                        path.display(),
+                        format
+                    );
+
                     let payload = NewFile {
                         path: path.display().to_string(),
                     };
                     match handle.emit("new-download", &payload) {
                         Ok(_) => println!("[downloads-watcher] Emitted event for: {}", path.display()),
                         Err(e) => eprintln!("[downloads-watcher] Failed to emit event: {e}"),
+                    }
+
+                    // Auto-compress if it's a supported image format
+                    if format.is_some() {
+                        if let Some(ref vips) = vips {
+                            // Wait for the file to be fully written
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+
+                            if let Some(output) = compressed_output_path(file_path) {
+                                let quality = QUALITY.load(Ordering::Relaxed);
+                                match vips.compress(file_path, &output, quality) {
+                                    Ok(size) => {
+                                        println!(
+                                            "[compression] Compressed {} → {} ({} bytes)",
+                                            path.display(),
+                                            output.display(),
+                                            size
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[compression] Failed to compress {}: {e}",
+                                            path.display()
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -193,7 +260,7 @@ fn load_icon() -> tauri::image::Image<'static> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_vips_status])
+        .invoke_handler(tauri::generate_handler![get_vips_status, set_quality, get_quality])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
             let icon = load_icon();

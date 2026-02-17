@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Slider, SliderValue } from "@/components/ui/slider";
 import { toastManager } from "@/components/ui/toast";
 import { useDownloadsWatcher } from "@/hooks/use-downloads-watcher";
 import "./App.css";
@@ -16,9 +17,11 @@ interface VipsStatus {
 
 function App() {
   const [status, setStatus] = useState<VipsStatus | null>(null);
+  const [quality, setQuality] = useState(80);
 
   useEffect(() => {
     invoke<VipsStatus>("get_vips_status").then(setStatus);
+    invoke<number>("get_quality").then(setQuality);
   }, []);
 
   const handleNewDownload = useCallback((path: string) => {
@@ -31,6 +34,19 @@ function App() {
     });
   }, []);
 
+  const qualityTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  const handleQualityChange = useCallback(
+    (val: number | number[]) => {
+      const v = Array.isArray(val) ? val[0] : val;
+      setQuality(v);
+      if (qualityTimer.current) clearTimeout(qualityTimer.current);
+      qualityTimer.current = setTimeout(() => {
+        invoke("set_quality", { value: v });
+      }, 300);
+    },
+    [],
+  );
+
   useDownloadsWatcher(handleNewDownload);
 
   return (
@@ -40,6 +56,21 @@ function App() {
         <ThemeToggle />
       </header>
       <div className="p-4 space-y-3">
+        <Slider
+          min={1}
+          max={100}
+          value={quality}
+          onValueChange={handleQualityChange}
+          className="space-y-2"
+        >
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">Compression Quality</label>
+            <SliderValue className="text-sm tabular-nums text-muted-foreground" />
+          </div>
+        </Slider>
+        <p className="text-xs text-muted-foreground">
+          Higher quality = less compression. Lower quality = smaller files.
+        </p>
         <h2 className="text-base font-medium">libvips Status</h2>
         {!status ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
