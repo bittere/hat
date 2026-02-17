@@ -1,4 +1,5 @@
 use libloading::{Library, Symbol};
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
@@ -6,7 +7,7 @@ use std::path::PathBuf;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 fn get_target_double() -> &'static str {
@@ -123,6 +124,58 @@ fn get_vips_status(app: tauri::AppHandle) -> VipsStatus {
     }
 }
 
+#[derive(Clone, Serialize)]
+struct NewFile {
+    path: String,
+}
+
+fn start_downloads_watcher(app: &tauri::AppHandle) {
+    let Some(downloads_dir) = dirs::download_dir() else {
+        eprintln!("Could not determine downloads directory");
+        return;
+    };
+
+    let handle = app.clone();
+    let mut watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
+        if let Ok(event) = res {
+            let dominated = matches!(
+                event.kind,
+                EventKind::Create(_)
+                    | EventKind::Modify(notify::event::ModifyKind::Name(notify::event::RenameMode::To))
+            );
+            if dominated {
+                for path in &event.paths {
+                    println!("[downloads-watcher] File detected ({:?}): {}", event.kind, path.display());
+                    let payload = NewFile {
+                        path: path.display().to_string(),
+                    };
+                    match handle.emit("new-download", &payload) {
+                        Ok(_) => println!("[downloads-watcher] Emitted event for: {}", path.display()),
+                        Err(e) => eprintln!("[downloads-watcher] Failed to emit event: {e}"),
+                    }
+                }
+            } else {
+                println!("[downloads-watcher] Event (ignored): {:?}", event.kind);
+            }
+        }
+    }) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("Failed to create file watcher: {e}");
+            return;
+        }
+    };
+
+    if let Err(e) = watcher.watch(&downloads_dir, RecursiveMode::NonRecursive) {
+        eprintln!("Failed to watch downloads directory: {e}");
+        return;
+    }
+
+    // Leak the watcher so it lives for the entire app lifetime
+    std::mem::forget(watcher);
+    println!("Watching downloads directory: {}", downloads_dir.display());
+}
+
 fn load_icon() -> tauri::image::Image<'static> {
     #[cfg(target_os = "windows")]
     {
@@ -149,6 +202,8 @@ pub fn run() {
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            start_downloads_watcher(app.handle());
 
             TrayIconBuilder::new()
                 .icon(icon)

@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { toastManager } from "@/components/ui/toast";
+import { useDownloadsWatcher } from "@/hooks/use-downloads-watcher";
 import "./App.css";
 
 interface VipsStatus {
@@ -18,6 +20,18 @@ function App() {
   useEffect(() => {
     invoke<VipsStatus>("get_vips_status").then(setStatus);
   }, []);
+
+  const handleNewDownload = useCallback((path: string) => {
+    const fileName = path.split(/[\\/]/).pop() ?? path;
+    console.log("[downloads-watcher] Showing toast for:", fileName);
+    toastManager.add({
+      title: "New download",
+      description: fileName,
+      type: "info",
+    });
+  }, []);
+
+  useDownloadsWatcher(handleNewDownload);
 
   return (
     <main>
