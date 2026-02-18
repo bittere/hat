@@ -169,6 +169,14 @@ fn start_downloads_watcher(app: &tauri::AppHandle) {
                 for path in &event.paths {
                     let file_path = Path::new(path);
 
+                    // Skip temporary/incomplete download files
+                    if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
+                        if ext.eq_ignore_ascii_case("tmp") || ext.eq_ignore_ascii_case("crdownload") {
+                            println!("[downloads-watcher] Skipping temporary file: {}", path.display());
+                            continue;
+                        }
+                    }
+
                     // Skip files that are already compressed outputs
                     if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
                         if stem.ends_with("_compressed") {
