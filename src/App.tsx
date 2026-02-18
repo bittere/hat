@@ -64,12 +64,12 @@ function App() {
           className="space-y-2"
         >
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">Compression Quality</label>
+            <label className="text-sm font-medium">Compression Level</label>
             <SliderValue className="text-sm tabular-nums text-muted-foreground" />
           </div>
         </Slider>
         <p className="text-xs text-muted-foreground">
-          Higher quality = less compression. Lower quality = smaller files.
+          Higher = more compression, smaller files. Lower = less compression, larger files.
         </p>
         <h2 className="text-base font-medium">libvips Status</h2>
         {!status ? (

@@ -186,14 +186,19 @@ impl Vips {
             )
         })?;
 
+        // The UI sends a "compression level" (1-100) where higher = more compression.
+        // libvips Q is the inverse: higher Q = higher quality = less compression.
+        let q = (101u8.saturating_sub(quality)).clamp(1, 100);
+        println!("[compression] compression_level={} → libvips Q={}", quality, q);
+
         match format {
-            ImageFormat::Png => self.compress_png(input, output, quality),
-            ImageFormat::Jpeg => self.compress_jpeg(input, output, quality),
-            ImageFormat::Webp => self.compress_webp(input, output, quality),
-            ImageFormat::Tiff => self.compress_tiff(input, output, quality),
-            ImageFormat::Heif | ImageFormat::Avif => self.compress_heif(input, output, quality),
-            ImageFormat::Gif => self.compress_gif(input, output, quality),
-            ImageFormat::Jxl => self.compress_jxl(input, output, quality),
+            ImageFormat::Png => self.compress_png(input, output, q),
+            ImageFormat::Jpeg => self.compress_jpeg(input, output, q),
+            ImageFormat::Webp => self.compress_webp(input, output, q),
+            ImageFormat::Tiff => self.compress_tiff(input, output, q),
+            ImageFormat::Heif | ImageFormat::Avif => self.compress_heif(input, output, q),
+            ImageFormat::Gif => self.compress_gif(input, output, q),
+            ImageFormat::Jxl => self.compress_jxl(input, output, q),
         }
     }
 
@@ -203,15 +208,19 @@ impl Vips {
 
     pub fn compress_png(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
         let q = quality.clamp(1, 100);
-        let effort = ((q as f32 / 100.0) * 10.0).clamp(1.0, 10.0) as i32;
+        let ui = 101u8.saturating_sub(q);
+        let compression = ((ui as f32 / 100.0) * 9.0).round().clamp(0.0, 9.0) as i32;
+        let effort = ((ui as f32 / 100.0) * 10.0).round().clamp(1.0, 10.0) as i32;
 
         let suffix = format!(
-            "{}[compression=9,effort={},strip=true,Q={}]",
+            "{}[compression={},palette=true,Q={},effort={},strip=true]",
             output_str(output)?,
-            effort,
+            compression,
             q,
+            effort,
         );
 
+        println!("[compression] PNG save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
@@ -230,6 +239,7 @@ impl Vips {
             q,
         );
 
+        println!("[compression] JPEG save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
@@ -248,6 +258,7 @@ impl Vips {
             q,
         );
 
+        println!("[compression] WebP save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
@@ -261,11 +272,12 @@ impl Vips {
     pub fn compress_tiff(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
         let q = quality.clamp(1, 100);
         let suffix = format!(
-            "{}[Q={},strip=true]",
+            "{}[Q={},compression=jpeg,strip=true]",
             output_str(output)?,
             q,
         );
 
+        println!("[compression] TIFF save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
@@ -279,11 +291,12 @@ impl Vips {
     pub fn compress_heif(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
         let q = quality.clamp(1, 100);
         let suffix = format!(
-            "{}[Q={}]",
+            "{}[Q={},strip=true]",
             output_str(output)?,
             q,
         );
 
+        println!("[compression] HEIF save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
@@ -295,31 +308,35 @@ impl Vips {
     }
 
     pub fn compress_gif(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
-        let effort = ((quality as f32 / 100.0) * 10.0).clamp(1.0, 10.0) as i32;
+        let q = quality.clamp(1, 100);
+        let ui = 101u8.saturating_sub(q);
+        let effort = ((ui as f32 / 100.0) * 10.0).round().clamp(1.0, 10.0) as i32;
         let suffix = format!(
             "{}[effort={},dither=1.0]",
             output_str(output)?,
             effort,
         );
 
+        println!("[compression] GIF save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] GIF {} → {} bytes (q={})", input.display(), size, quality);
+        println!("[compression] GIF {} → {} bytes (effort={})", input.display(), size, effort);
         Ok(size)
     }
 
     pub fn compress_jxl(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
         let q = quality.clamp(1, 100);
         let suffix = format!(
-            "{}[Q={},effort=7]",
+            "{}[Q={},effort=7,strip=true]",
             output_str(output)?,
             q,
         );
 
+        println!("[compression] JXL save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
