@@ -1,21 +1,20 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "hat",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "identifier": "com.bittere.hat",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "bun run build:tauri",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "hat - Image Compressor",
-        "width": 900,
-        "height": 600,
-        "decorations": false
+        "title": "hat",
+        "width": 800,
+        "height": 600
       }
     ],
     "security": {
@@ -32,8 +31,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "binaries/**/*"
-    ]
+    "resources": {
+      "libvips/*": "libvips/"
+    }
   }
 }

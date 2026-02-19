@@ -1,17 +1,7 @@
-<img src="https://raw.githubusercontent.com/bittere/hat/refs/heads/main/app-icon.png" style="height: 128px" />
+# Tauri + React + Typescript
 
-# Hat
-> [!WARNING]  
-> Though there are binaries for macOS and Linux, these haven't been completely tested. If you find any bugs, please file an issue.
+This template should help get you started developing with Tauri, React and Typescript in Vite.
 
-Hat runs in the background and watches a configurable list of folders for new images. By default, Hat only looks at your `Downloads` folder. When a new image arrives, it automatically compresses it and saves it with as with a `(...)_compressed` suffix in the same folder. Compression quality is configurable.
+## Recommended IDE Setup
 
-Hat can work with most common file types, including PNG, JPG/JPEG/JFIF, WebP, TIFF, and GIF. Support for more file types & format conversion is planned.
-
-Hat will always be free and will try to balance being delightful to use but powerful.
-
-All processing is done offline, no data is ever uploaded anywhere.
-
-## Demo
-
-<img src="https://raw.githubusercontent.com/bittere/hat/refs/heads/main/.github/demo.gif" />
+- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)

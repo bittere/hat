@@ -1,395 +1,170 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { TitleBar } from "./components/TitleBar";
+import { useCallback, useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Slider, SliderValue } from "@/components/ui/slider";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { toastManager } from "@/components/ui/toast";
+import { useDownloadsWatcher } from "@/hooks/use-downloads-watcher";
+import { useCompressionEvents } from "@/hooks/use-compression-events";
+import { StatisticsCard } from "@/components/statistics-card";
+import { CompressionHistoryCard } from "@/components/compression-history-card";
+import { extractFileName } from "@/lib/format";
 import "./App.css";
 
-interface CompressionTask {
-  id: string;
-  filename: string;
-  status: "pending" | "compressing" | "completed" | "error" | "reconverting";
-  original_size: number;
-  compressed_size?: number;
-  progress: number;
-  error?: string;
-  original_path?: string;
-}
-
-interface TaskEvent {
-  id: string;
-  status: string;
-  progress: number;
-  compressed_size?: number;
-  filename?: string;
-  original_size?: number;
-}
-
 function App() {
-  const [tasks, setTasks] = useState<CompressionTask[]>([]);
-  const [isMonitoring, setIsMonitoring] = useState(true);
-  const [quality, setQuality] = useState(30);
-  const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
+  const {
+    quality,
+    history,
+    recompressed,
+    handleRecompress,
+    handleClearHistory,
+    handleDeleteOriginals,
+    handleQualityChange,
+    handleManualCompress,
+  } = useCompressionEvents();
+
+  const [isHovering, setIsHovering] = useState(false);
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        const settings: any = await invoke("get_settings");
-        setQuality(settings.quality);
-        setWatchedFolders(settings.watched_folders);
-      } catch (e) {
-        console.error("Failed to init settings:", e);
-      }
-    };
-    init();
-  }, []);
+    let unlistenDragEnter: () => void;
+    let unlistenDragLeave: () => void;
+    let unlistenDrop: () => void;
 
-  useEffect(() => {
-    const setupEventListeners = async () => {
-      try {
-        // Hydrate initial state once on mount
-        const initialTasks = await invoke<CompressionTask[]>("get_compression_status");
-        setTasks(initialTasks);
+    const setupListeners = async () => {
+      const window = getCurrentWindow();
 
-        // Listen for task creation events
-        const unlistenCreated = await listen<TaskEvent>("task:created", (event) => {
-          const taskEvent = event.payload;
-          setTasks((prev) => {
-            const exists = prev.find((t) => t.id === taskEvent.id);
-            if (exists) return prev;
-            return [
-              ...prev,
-              {
-                id: taskEvent.id,
-                filename: taskEvent.filename || "Unknown",
-                original_size: taskEvent.original_size || 0,
-                compressed_size: taskEvent.compressed_size,
-                progress: taskEvent.progress,
-                status: taskEvent.status as any,
-              },
-            ];
-          });
-        });
+      unlistenDragEnter = await window.listen("tauri://drag-enter", () => {
+        setIsHovering(true);
+      });
 
-        // Listen for task status changes (progress, completion, errors)
-        const unlistenStatusChanged = await listen<TaskEvent>("task:status-changed", (event) => {
-          const taskEvent = event.payload;
-          setTasks((prev) =>
-            prev.map((task) =>
-              task.id === taskEvent.id
-                ? {
-                    ...task,
-                    status: taskEvent.status as any,
-                    progress: taskEvent.progress,
-                    compressed_size: taskEvent.compressed_size,
-                  }
-                : task
-            )
-          );
-        });
+      unlistenDragLeave = await window.listen("tauri://drag-leave", () => {
+        setIsHovering(false);
+      });
 
-        // Listen for task deletion events
-        const unlistenDeleted = await listen<TaskEvent>("task:deleted", (event) => {
-          const taskEvent = event.payload;
-          setTasks((prev) => prev.filter((task) => task.id !== taskEvent.id));
-        });
-
-        return () => {
-          unlistenCreated();
-          unlistenStatusChanged();
-          unlistenDeleted();
-        };
-      } catch (error) {
-        console.error("Failed to setup event listeners:", error);
-      }
+      unlistenDrop = await window.listen<{ paths: string[] }>("tauri://drag-drop", (event) => {
+        setIsHovering(false);
+        const paths = event.payload.paths;
+        if (paths.length > 0) {
+          handleManualCompress(paths);
+        }
+      });
     };
 
-    const cleanup = setupEventListeners();
-    
+    setupListeners();
+
     return () => {
-      cleanup.then((fn) => fn && fn());
+      if (unlistenDragEnter) unlistenDragEnter();
+      if (unlistenDragLeave) unlistenDragLeave();
+      if (unlistenDrop) unlistenDrop();
     };
+  }, [handleManualCompress]);
+
+  const handleNewDownload = useCallback((path: string) => {
+    const fileName = extractFileName(path);
+    console.log("[downloads-watcher] Showing toast for:", fileName);
+    toastManager.add({
+      title: "New download",
+      description: fileName,
+      type: "info",
+    });
   }, []);
 
-  const totalSavings = tasks.reduce((sum, task) => {
-    if (task.compressed_size) {
-      return sum + (task.original_size - task.compressed_size);
-    }
-    return sum;
-  }, 0);
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return (
-      Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i]
-    );
-  };
-
-  const completedCount = tasks.filter((t) => t.status === "completed").length;
-
-  const handleDeleteOriginals = async () => {
-    if (!window.confirm("Are you sure you want to delete the original files for all completed compressions? This cannot be undone.")) {
-      return;
-    }
-    try {
-      await invoke("delete_originals");
-      console.log("Originals deleted");
-      // Events will handle UI update via task:deleted listener
-    } catch (error) {
-      console.error("Failed to delete originals:", error);
-    }
-  };
-
-  const handleClearCompleted = async () => {
-    try {
-      await invoke("clear_completed");
-    } catch (error) {
-      console.error("Failed to clear completed tasks:", error);
-    }
-  };
-
-  const handleQualityChange = async (newQuality: number) => {
-    setQuality(newQuality);
-    try {
-      await invoke("set_quality", { quality: newQuality });
-    } catch (error) {
-      console.error("Failed to update quality:", error);
-    }
-  };
-
-  const handleAddDirectory = async () => {
-    try {
-      const settings: any = await invoke("add_directory");
-      setWatchedFolders(settings.watched_folders);
-    } catch (error) {
-      if (error !== "No folder selected") {
-        console.error("Failed to add directory:", error);
-      }
-    }
-  };
-
-  const handleRemoveDirectory = async (path: string) => {
-    try {
-      const settings: any = await invoke("remove_directory", { path });
-      setWatchedFolders(settings.watched_folders);
-    } catch (error) {
-      console.error("Failed to remove directory:", error);
-    }
-  };
-
-  const handleRecompress = async (taskId: string) => {
-    try {
-      await invoke("recompress_file", { originalTaskId: taskId });
-    } catch (error) {
-      console.error("Failed to recompress file:", error);
-    }
-  };
-
-  const handleDeleteTask = async (taskId: string) => {
-    try {
-      await invoke("delete_task", { id: taskId });
-      console.log("Task deleted");
-    } catch (error) {
-      console.error("Failed to delete task:", error);
-    }
-  };
-
-  const handleDeleteAllJobs = async () => {
-    if (!window.confirm(`Are you sure you want to delete all ${tasks.length} jobs? This cannot be undone.`)) {
-      return;
-    }
-    try {
-      for (const task of tasks) {
-        await invoke("delete_task", { id: task.id });
-      }
-      console.log("All jobs deleted");
-    } catch (error) {
-      console.error("Failed to delete all jobs:", error);
-    }
-  };
+  useDownloadsWatcher(handleNewDownload);
 
   return (
-    <div className="app">
-      <TitleBar />
-      <header className="app-header">
-        <h1>Hat</h1>
-        <p>Automatic Image Compressor</p>
-      </header>
-      <main className="app-main">
-        <div className="compression-status">
-          <div className="status-header">
-            <h2>Compression Queue</h2>
-            <div className="settings-panel">
-              <div className="quality-slider">
-                <div className="slider-header">
-                  <span>Quality: {quality}%</span>
-                  <span className="quality-label">
-                    {quality < 40 ? "High Compression" : quality > 70 ? "High Quality" : "Balanced"}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="100"
-                  value={quality}
-                  onChange={(e) => handleQualityChange(parseInt(e.target.value))}
-                  className="modern-slider"
-                />
-              </div>
-
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={isMonitoring}
-                  onChange={(e) => setIsMonitoring(e.target.checked)}
-                />
-                <span>Monitoring</span>
-              </label>
-            </div>
+    <main className="relative">
+      {isHovering && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none border-4 border-dashed border-primary m-2 rounded-2xl animate-in fade-in zoom-in duration-200">
+          <div className="text-center">
+            <p className="text-2xl font-bold">Drop to Compress</p>
+            <p className="text-muted-foreground">Release to start processing</p>
           </div>
+        </div>
+      )}
+      <header className="flex w-full items-center justify-between px-4 py-3 border-b border-border">
+        <h1 className="text-lg font-semibold flex items-center gap-2">
+          <img src="app-icon.svg" className="w-6 h-6" alt="Logo" />
+          Hat
+        </h1>
+        <ThemeToggle />
+      </header>
+      <div className="flex gap-4 p-4 h-[calc(100vh-57px)]">
+        {/* Left column – Settings & Statistics */}
+        <div className="flex flex-col gap-3 w-80 shrink-0">
+          <Slider
+            min={1}
+            max={100}
+            value={quality}
+            onValueChange={handleQualityChange}
+            className="space-y-2 bg-card p-4 rounded-xl border border-border shadow-xs"
+          >
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Compression Level</label>
+              <SliderValue className="text-sm tabular-nums text-muted-foreground" />
+            </div>
+          </Slider>
+          <p className="text-xs text-muted-foreground px-1">
+            Higher = more compression, smaller files. Lower = less compression, larger files.
+          </p>
 
-          {tasks.length === 0 ? (
-            <div className="empty-state">
-              <p>Waiting for images in folders...</p>
-              <small>Supported formats: JPG, PNG, WebP, JFIF, TIFF, GIF</small>
+          <StatisticsCard history={history} />
+
+          <div className="flex flex-col gap-2 mt-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={handleClearHistory}
+              disabled={history.length === 0}
+            >
+              Clear History
+            </Button>
+            <Button
+              variant="destructive-outline"
+              size="sm"
+              className="w-full opacity-80 hover:opacity-100"
+              onClick={handleDeleteOriginals}
+              disabled={history.length === 0}
+            >
+              Delete Originals
+            </Button>
+          </div>
+        </div>
+
+        {/* Right column – Compression History */}
+        <div className="flex flex-col gap-2 min-w-0 flex-1">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Compression History</h2>
+          </div>
+          {history.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-muted rounded-2xl gap-2 p-8 text-center text-muted-foreground">
+              <p className="text-sm">No compressions yet.</p>
+              <p className="text-xs max-w-[200px]">Download an image or drop one here to get started.</p>
             </div>
           ) : (
-            <>
-              <div className="stats">
-                <div className="stat">
-                  <span className="label">Total Processed</span>
-                  <span className="value">{completedCount}</span>
-                </div>
-                <div className="stat">
-                  <span className="label">Space Saved</span>
-                  <span className="value">{formatBytes(totalSavings)}</span>
-                </div>
-                <div className="stat actions">
-                   <span className="label">Queue Actions</span>
-                   <div className="action-buttons">
-                     <button
-                       onClick={handleClearCompleted}
-                       className="btn-secondary"
-                       disabled={completedCount === 0}
-                     >
-                       Clear Queue
-                     </button>
-                     <button
-                       onClick={handleDeleteOriginals}
-                       className="btn-danger"
-                       disabled={completedCount === 0}
-                     >
-                       Delete Originals
-                     </button>
-                     <button
-                       onClick={handleDeleteAllJobs}
-                       className="btn-danger"
-                       disabled={tasks.length === 0}
-                     >
-                       Delete All Jobs
-                     </button>
-                   </div>
-                 </div>
+            <ScrollArea className="flex-1">
+              <div className="grid grid-cols-1 gap-2 pr-3">
+                {[...history].reverse().map((record, i) => {
+                  const cannotRecompress =
+                    record.original_deleted ||
+                    recompressed.has(record.timestamp) ||
+                    record.quality >= 100;
+                  return (
+                    <CompressionHistoryCard
+                      key={`${record.timestamp}-${i}`}
+                      record={record}
+                      cannotRecompress={cannotRecompress}
+                      onRecompress={handleRecompress}
+                    />
+                  );
+                })}
               </div>
-
-              <div className="tasks-list">
-                {[...tasks].sort((a, b) => b.id.localeCompare(a.id)).map((task) => (
-                  <div key={task.id} className={`task ${task.status}`}>
-                    <div className="task-info">
-                      <p className="task-filename">{task.filename}</p>
-                      {task.status === "compressing" && (
-                        <p className="task-size">{task.progress}% compressed</p>
-                      )}
-                      {task.status === "completed" && task.compressed_size && (
-                        <p className="task-size">
-                          {formatBytes(task.original_size)} →{" "}
-                          {formatBytes(task.compressed_size)}
-                        </p>
-                      )}
-                      {task.error && (
-                        <p className="task-error">{task.error}</p>
-                      )}
-                    </div>
-                    <div className="task-status">
-                      {(task.status === "compressing" || task.status === "reconverting") && (
-                        <div className="progress-bar">
-                          <div
-                            className="progress-fill"
-                            style={{ width: `${task.progress}%` }}
-                          ></div>
-                        </div>
-                      )}
-                      {task.status === "completed" && (
-                        <div className="task-actions">
-                          <span className="badge success">✓ Done</span>
-                          <button
-                            onClick={() => handleRecompress(task.id)}
-                            className="btn-icon-small"
-                            title="Recompress with current quality"
-                          >
-                            ↻
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTask(task.id)}
-                            className="btn-icon-danger"
-                            title="Delete task"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      )}
-                      {task.status === "error" && (
-                        <div className="task-actions">
-                          <span className="badge error">✗ Error</span>
-                          <button
-                            onClick={() => handleDeleteTask(task.id)}
-                            className="btn-icon-danger"
-                            title="Delete task"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      )}
-                      {task.status === "pending" && (
-                        <span className="badge pending">⏳ Pending</span>
-                      )}
-                      {task.status === "reconverting" && (
-                        <span className="badge reconverting">⟳ Reconverting</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
+            </ScrollArea>
           )}
         </div>
-      </main>
-
-      <footer className="app-footer">
-        <div className="folder-management">
-          <span className="footer-label">Watching:</span>
-          <div className="folder-list">
-            {watchedFolders.map((path) => (
-              <div key={path} className="folder-item">
-                <span title={path}>{path.split(/[\\/]/).pop()}</span>
-                <button
-                  onClick={() => handleRemoveDirectory(path)}
-                  className="btn-icon-danger"
-                  disabled={watchedFolders.length <= 1}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-          <button onClick={handleAddDirectory} className="btn-secondary-sm">
-            + Add Folder
-          </button>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </main>
   );
 }
 
