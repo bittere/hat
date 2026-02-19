@@ -26,6 +26,7 @@ libloading = "0.8"
 notify = { version = "7", features = ["serde"] }
 dirs = "6"
 thiserror = "2"
+tauri-plugin-notification = "2.3.3"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
