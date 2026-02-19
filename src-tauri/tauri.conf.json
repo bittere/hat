@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "hat",
         "width": 800,
         "height": 600
@@ -32,7 +33,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "libvips/*": "libvips/"
+      "libvips/*": "libvips/",
+      "libvips/glib-2.0/include/*": "libvips/glib-2.0/include/"
     }
   }
 }

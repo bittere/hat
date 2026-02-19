@@ -84,7 +84,7 @@ function App() {
       )}
       <header className="flex w-full items-center justify-between px-4 py-3 border-b border-border">
         <h1 className="text-lg font-semibold flex items-center gap-2">
-          <img src="app-icon.svg" className="w-6 h-6" alt="Logo" />
+          <img src="/app-icon.svg" className="w-6 h-6" alt="Logo" />
           Hat
         </h1>
         <ThemeToggle />
