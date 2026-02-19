@@ -9,7 +9,7 @@ use std::path::Path;
 // Supported format enum
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageFormat {
     Png,
@@ -42,6 +42,39 @@ impl ImageFormat {
             .and_then(|e| e.to_str())
             .and_then(Self::from_extension)
     }
+}
+
+impl std::fmt::Display for ImageFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Png => write!(f, "png"),
+            Self::Jpeg => write!(f, "jpeg"),
+            Self::Webp => write!(f, "webp"),
+            Self::Tiff => write!(f, "tiff"),
+            Self::Heif => write!(f, "heif"),
+            Self::Avif => write!(f, "avif"),
+            Self::Gif => write!(f, "gif"),
+            Self::Jxl => write!(f, "jxl"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CompressionRecord
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct CompressionRecord {
+    pub initial_path: String,
+    pub final_path: String,
+    pub initial_size: u64,
+    pub compressed_size: u64,
+    pub initial_format: String,
+    pub final_format: String,
+    pub quality: u8,
+    pub timestamp: u64,
+    #[serde(default)]
+    pub original_deleted: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -210,14 +243,11 @@ impl Vips {
         let q = quality.clamp(1, 100);
         let ui = 101u8.saturating_sub(q);
         let compression = ((ui as f32 / 100.0) * 9.0).round().clamp(0.0, 9.0) as i32;
-        let effort = ((ui as f32 / 100.0) * 10.0).round().clamp(1.0, 10.0) as i32;
 
         let suffix = format!(
-            "{}[compression={},palette=true,Q={},effort={},strip=true]",
+            "{}[compression={},palette=true,colours=256,Q=100,dither=1.0,effort=10,filter=248,strip=true]",
             output_str(output)?,
             compression,
-            q,
-            effort,
         );
 
         println!("[compression] PNG save params: {}", suffix);
