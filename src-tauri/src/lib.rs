@@ -1,3 +1,4 @@
+mod config;
 mod commands;
 mod compression;
 mod log;
@@ -26,6 +27,10 @@ pub fn run() {
             commands::delete_original_images,
             commands::recompress,
             commands::compress_files,
+            commands::get_watched_folders,
+            commands::add_watched_folder,
+            commands::remove_watched_folder,
+            commands::search_directories,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -51,7 +56,8 @@ pub fn run() {
             });
 
             log::init_compression_log(app.handle());
-            watcher::start_downloads_watcher(app.handle());
+            config::init_config(app.handle());
+            watcher::init_watcher(app.handle());
             tray::setup_tray(app, icon)?;
 
             Ok(())

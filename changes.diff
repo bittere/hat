@@ -1,0 +1,998 @@
+diff --git a/bun.lock b/bun.lock
+index 6722102..71fb8c8 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -1,6 +1,5 @@
+ {
+   "lockfileVersion": 1,
+-  "configVersion": 1,
+   "workspaces": {
+     "": {
+       "name": "hat",
+diff --git a/src-tauri/src/commands.rs b/src-tauri/src/commands.rs
+index fa2796d..24b5f54 100644
+--- a/src-tauri/src/commands.rs
++++ b/src-tauri/src/commands.rs
+@@ -142,3 +142,105 @@ pub async fn compress_files(
+
+     Ok(())
+ }
++
++#[tauri::command]
++pub fn get_watched_folders() -> Vec<String> {
++    let config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
++    config_manager.config.watched_folders.clone()
++}
++
++#[tauri::command]
++pub fn add_watched_folder(
++    path: String,
++    watcher_state: tauri::State<'_, crate::watcher::WatcherHandle>,
++) -> Result<Vec<String>, String> {
++    let mut config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
++
++    let p = Path::new(&path);
++    if !p.exists() || !p.is_dir() {
++        return Err("Path does not exist or is not a directory".to_string());
++    }
++
++    config_manager.add_folder(path.clone());
++
++    let mut watcher = watcher_state.watcher.lock().unwrap();
++    let _ = watcher.watch(p, notify::RecursiveMode::NonRecursive);
++
++    Ok(config_manager.config.watched_folders.clone())
++}
++
++#[tauri::command]
++pub fn remove_watched_folder(
++    path: String,
++    watcher_state: tauri::State<'_, crate::watcher::WatcherHandle>,
++) -> Result<Vec<String>, String> {
++    let mut config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
++    config_manager.remove_folder(&path);
++
++    let mut watcher = watcher_state.watcher.lock().unwrap();
++    let _ = watcher.unwatch(Path::new(&path));
++
++    Ok(config_manager.config.watched_folders.clone())
++}
++
++#[tauri::command]
++pub async fn search_directories(query: String) -> Vec<String> {
++    if query.is_empty() {
++        let mut common = Vec::new();
++        if let Some(h) = dirs::home_dir() { common.push(h.display().to_string()); }
++        if let Some(d) = dirs::download_dir() { common.push(d.display().to_string()); }
++        if let Some(d) = dirs::document_dir() { common.push(d.display().to_string()); }
++        if let Some(p) = dirs::picture_dir() { common.push(p.display().to_string()); }
++        if let Some(d) = dirs::desktop_dir() { common.push(d.display().to_string()); }
++        return common;
++    }
++
++    let path = Path::new(&query);
++
++    // Determine the directory to search in and the prefix to match
++    let (search_dir, prefix) = if query.ends_with('/') || query.ends_with('\') {
++        (path, "")
++    } else if let Some(parent) = path.parent() {
++        let p_str = parent.as_os_str().to_string_lossy();
++        if p_str.is_empty() {
++             // If no parent, we might be looking at a relative path in current dir
++             // or just starting a path. On Unix, empty parent usually means relative.
++             if query.starts_with('/') {
++                 (Path::new("/"), &query[1..])
++             } else {
++                 (Path::new("."), query.as_str())
++             }
++        } else {
++            (parent, path.file_name().and_then(|s| s.to_str()).unwrap_or(""))
++        }
++    } else {
++        (Path::new("/"), query.as_str())
++    };
++
++    let mut results = Vec::new();
++
++    // If the path itself is a directory, include it as the first result
++    if path.is_dir() && !results.contains(&path.display().to_string()) {
++        results.push(path.display().to_string());
++    }
++
++    if let Ok(entries) = std::fs::read_dir(search_dir) {
++        for entry in entries.flatten() {
++            if let Ok(file_type) = entry.file_type() {
++                if file_type.is_dir() {
++                    let name = entry.file_name().to_string_lossy().to_string();
++                    if name.to_lowercase().starts_with(&prefix.to_lowercase()) {
++                        let full_path = entry.path().display().to_string();
++                        if !results.contains(&full_path) {
++                            results.push(full_path);
++                        }
++                    }
++                }
++            }
++            if results.len() >= 5 {
++                break;
++            }
++        }
++    }
++    results
++}
+diff --git a/src-tauri/src/config.rs b/src-tauri/src/config.rs
+new file mode 100644
+index 0000000..db4a1a4
+--- /dev/null
++++ b/src-tauri/src/config.rs
+@@ -0,0 +1,68 @@
++use serde::{Deserialize, Serialize};
++use std::path::PathBuf;
++use std::sync::Mutex;
++use tauri::Manager;
++
++#[derive(Debug, Serialize, Deserialize, Clone)]
++pub struct AppConfig {
++    pub watched_folders: Vec<String>,
++}
++
++impl Default for AppConfig {
++    fn default() -> Self {
++        let mut watched_folders = Vec::new();
++        if let Some(downloads) = dirs::download_dir() {
++            watched_folders.push(downloads.display().to_string());
++        }
++        Self { watched_folders }
++    }
++}
++
++pub struct ConfigManager {
++    pub config: AppConfig,
++    path: PathBuf,
++}
++
++impl ConfigManager {
++    pub fn load(path: PathBuf) -> Self {
++        let config = std::fs::read_to_string(&path)
++            .ok()
++            .and_then(|s| serde_json::from_str(&s).ok())
++            .unwrap_or_else(AppConfig::default);
++
++        Self { config, path }
++    }
++
++    pub fn save(&self) {
++        if let Some(parent) = self.path.parent() {
++            let _ = std::fs::create_dir_all(parent);
++        }
++        if let Ok(json) = serde_json::to_string_pretty(&self.config) {
++            let _ = std::fs::write(&self.path, json);
++        }
++    }
++
++    pub fn add_folder(&mut self, folder: String) {
++        if !self.config.watched_folders.contains(&folder) {
++            self.config.watched_folders.push(folder);
++            self.save();
++        }
++    }
++
++    pub fn remove_folder(&mut self, folder: &str) {
++        self.config.watched_folders.retain(|f| f != folder);
++        self.save();
++    }
++}
++
++pub static CONFIG: std::sync::OnceLock<Mutex<ConfigManager>> = std::sync::OnceLock::new();
++
++pub fn init_config(app: &tauri::AppHandle) {
++    let config_path = app
++        .path()
++        .app_config_dir()
++        .expect("failed to resolve app config dir")
++        .join("config.json");
++    let config_manager = ConfigManager::load(config_path);
++    let _ = CONFIG.set(Mutex::new(config_manager));
++}
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index c442b67..0e07ec0 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -1,3 +1,4 @@
++mod config;
+ mod commands;
+ mod compression;
+ mod log;
+@@ -26,6 +27,10 @@ pub fn run() {
+             commands::delete_original_images,
+             commands::recompress,
+             commands::compress_files,
++            commands::get_watched_folders,
++            commands::add_watched_folder,
++            commands::remove_watched_folder,
++            commands::search_directories,
+         ])
+         .setup(|app| {
+             let window = app.get_webview_window("main").unwrap();
+@@ -51,7 +56,8 @@ pub fn run() {
+             });
+
+             log::init_compression_log(app.handle());
+-            watcher::start_downloads_watcher(app.handle());
++            config::init_config(app.handle());
++            watcher::init_watcher(app.handle());
+             tray::setup_tray(app, icon)?;
+
+             Ok(())
+diff --git a/src-tauri/src/watcher.rs b/src-tauri/src/watcher.rs
+index e4c8b21..30a0f6c 100644
+--- a/src-tauri/src/watcher.rs
++++ b/src-tauri/src/watcher.rs
+@@ -2,7 +2,7 @@ use crate::compression::{ImageFormat, Vips};
+ use crate::platform::get_lib_path;
+ use notify::{Event, EventKind, RecursiveMode, Watcher};
+ use std::path::Path;
+-use std::sync::Arc;
++use std::sync::{Arc, Mutex};
+ use tauri::{Emitter, Manager};
+
+ #[derive(Clone, serde::Serialize)]
+@@ -12,12 +12,11 @@ struct NewFile {
+
+ pub struct VipsState(pub Option<Arc<Vips>>);
+
+-pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+-    let Some(downloads_dir) = dirs::download_dir() else {
+-        eprintln!("Could not determine downloads directory");
+-        return;
+-    };
++pub struct WatcherHandle {
++    pub watcher: Mutex<notify::RecommendedWatcher>,
++}
+
++pub fn init_watcher(app: &tauri::AppHandle) {
+     let lib_path = get_lib_path(app);
+     let vips = match unsafe { Vips::new(&lib_path) } {
+         Ok(v) => {
+@@ -33,7 +32,7 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+     app.manage(VipsState(vips.clone()));
+
+     let handle = app.clone();
+-    let mut watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
++    let watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
+         if let Ok(event) = res {
+             let dominated = matches!(
+                 event.kind,
+@@ -48,10 +47,11 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+
+                     // Skip temporary/incomplete download files
+                     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
+-                        if ext.eq_ignore_ascii_case("tmp") || ext.eq_ignore_ascii_case("crdownload")
++                        let ext_lower = ext.to_lowercase();
++                        if ext_lower == "tmp" || ext_lower == "crdownload" || ext_lower == "part"
+                         {
+                             println!(
+-                                "[downloads-watcher] Skipping temporary file: {}",
++                                "[watcher] Skipping temporary file: {}",
+                                 path.display()
+                             );
+                             continue;
+@@ -62,7 +62,7 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+                     if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
+                         if stem.ends_with("_compressed") {
+                             println!(
+-                                "[downloads-watcher] Skipping compressed file: {}",
++                                "[watcher] Skipping compressed file: {}",
+                                 path.display()
+                             );
+                             continue;
+@@ -71,7 +71,7 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+
+                     let format = ImageFormat::from_path(file_path);
+                     println!(
+-                        "[downloads-watcher] File detected ({:?}): {} [format: {:?}]",
++                        "[watcher] File detected ({:?}): {} [format: {:?}]",
+                         event.kind,
+                         path.display(),
+                         format
+@@ -80,11 +80,13 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+                     let payload = NewFile {
+                         path: path.display().to_string(),
+                     };
++                    // We keep "new-download" event name for compatibility with frontend hooks for now,
++                    // though it now means "new file in watched folder"
+                     match handle.emit("new-download", &payload) {
+                         Ok(_) => {
+-                            println!("[downloads-watcher] Emitted event for: {}", path.display())
++                            println!("[watcher] Emitted event for: {}", path.display())
+                         }
+-                        Err(e) => eprintln!("[downloads-watcher] Failed to emit event: {e}"),
++                        Err(e) => eprintln!("[watcher] Failed to emit event: {e}"),
+                     }
+
+                     // Auto-compress if it's a supported image format
+@@ -95,14 +97,12 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+                             let p = path.to_path_buf();
+                             std::thread::spawn(move || {
+                                 if let Err(e) = crate::processor::process_file(&h, &v, &p) {
+-                                    eprintln!("[downloads-watcher] Error: {e}");
++                                    eprintln!("[watcher] Error: {e}");
+                                 }
+                             });
+                         }
+                     }
+                 }
+-            } else {
+-                println!("[downloads-watcher] Event (ignored): {:?}", event.kind);
+             }
+         }
+     }) {
+@@ -113,12 +113,29 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
+         }
+     };
+
+-    if let Err(e) = watcher.watch(&downloads_dir, RecursiveMode::NonRecursive) {
+-        eprintln!("Failed to watch downloads directory: {e}");
+-        return;
++    let watcher_handle = WatcherHandle {
++        watcher: Mutex::new(watcher),
++    };
++
++    // Initial folders from config
++    let folders = {
++        let config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
++        config_manager.config.watched_folders.clone()
++    };
++
++    {
++        let mut w = watcher_handle.watcher.lock().unwrap();
++        for folder in folders {
++            let path = Path::new(&folder);
++            if path.exists() {
++                if let Err(e) = w.watch(path, RecursiveMode::NonRecursive) {
++                    eprintln!("Failed to watch directory {}: {}", folder, e);
++                } else {
++                    println!("Watching directory: {}", folder);
++                }
++            }
++        }
+     }
+
+-    // Leak the watcher so it lives for the entire app lifetime
+-    std::mem::forget(watcher);
+-    println!("Watching downloads directory: {}", downloads_dir.display());
++    app.manage(watcher_handle);
+ }
+diff --git a/src/components/settings-dialog.tsx b/src/components/settings-dialog.tsx
+index 4c3f765..9f80fe3 100644
+--- a/src/components/settings-dialog.tsx
++++ b/src/components/settings-dialog.tsx
+@@ -1,6 +1,10 @@
++import { useEffect, useState } from "react";
+ import { Tuning2Linear } from "@solar-icons/react-perf";
++import { FolderPlus, Trash2, ChevronDown } from "lucide-react";
++import { invoke } from "@tauri-apps/api/core";
+ import { Toggle } from "@/components/ui/toggle";
+ import { Slider, SliderValue } from "@/components/ui/slider";
++import { Button } from "@/components/ui/button";
+ import {
+   Dialog,
+   DialogTrigger,
+@@ -10,6 +14,20 @@ import {
+   DialogDescription,
+   DialogPanel,
+ } from "@/components/ui/dialog";
++import {
++  Autocomplete,
++  AutocompleteInput,
++  AutocompleteItem,
++  AutocompleteList,
++  AutocompletePopup,
++  AutocompleteStatus,
++} from "@/components/ui/autocomplete";
++import {
++  Collapsible,
++  CollapsibleTrigger,
++  CollapsibleContent,
++} from "@/components/ui/collapsible";
++import { Spinner } from "@/components/ui/spinner";
+
+ interface SettingsDialogProps {
+   quality: number;
+@@ -17,6 +35,63 @@ interface SettingsDialogProps {
+ }
+
+ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps) {
++  const [searchValue, setSearchValue] = useState("");
++  const [isLoading, setIsLoading] = useState(false);
++  const [searchResults, setSearchResults] = useState<string[]>([]);
++  const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
++
++  useEffect(() => {
++    invoke<string[]>("get_watched_folders").then(setWatchedFolders);
++  }, []);
++
++  useEffect(() => {
++    if (!searchValue) {
++      setSearchResults([]);
++      setIsLoading(false);
++      return;
++    }
++
++    setIsLoading(true);
++    let ignore = false;
++
++    const timeoutId = setTimeout(async () => {
++      try {
++        const results = await invoke<string[]>("search_directories", { query: searchValue });
++        if (!ignore) setSearchResults(results);
++      } catch (err) {
++        console.error("Failed to search directories", err);
++        if (!ignore) setSearchResults([]);
++      } finally {
++        if (!ignore) setIsLoading(false);
++      }
++    }, 300);
++
++    return () => {
++      clearTimeout(timeoutId);
++      ignore = true;
++    };
++  }, [searchValue]);
++
++  const addFolder = async (path: string) => {
++    if (!path) return;
++    try {
++      const folders = await invoke<string[]>("add_watched_folder", { path });
++      setWatchedFolders(folders);
++      setSearchValue("");
++    } catch (err) {
++      console.error("Failed to add folder", err);
++    }
++  };
++
++  const removeFolder = async (path: string) => {
++    try {
++      const folders = await invoke<string[]>("remove_watched_folder", { path });
++      setWatchedFolders(folders);
++    } catch (err) {
++      console.error("Failed to remove folder", err);
++    }
++  };
++
+   return (
+     <Dialog>
+       <DialogTrigger
+@@ -32,18 +107,101 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
+           <DialogDescription>Configure compression options.</DialogDescription>
+         </DialogHeader>
+         <DialogPanel>
+-          <Slider
+-            min={1}
+-            max={100}
+-            value={quality}
+-            onValueChange={onQualityChange}
+-            className="space-y-2"
+-          >
+-            <div className="flex items-center justify-between">
+-              <label className="text-sm font-medium">Compression Level</label>
+-              <SliderValue className="text-sm tabular-nums text-muted-foreground" />
++          <div className="space-y-6">
++            <Slider
++              min={1}
++              max={100}
++              value={quality}
++              onValueChange={onQualityChange}
++              className="space-y-2"
++            >
++              <div className="flex items-center justify-between">
++                <label className="text-sm font-medium text-foreground">Compression Level</label>
++                <SliderValue className="text-sm tabular-nums text-muted-foreground" />
++              </div>
++            </Slider>
++
++            <div className="space-y-3">
++              <label className="text-sm font-medium text-foreground">Watched Folders</label>
++
++              <div className="flex gap-2">
++                <div className="flex-1">
++                  <Autocomplete
++                    filter={null}
++                    items={searchResults}
++                    onValueChange={(val) => {
++                       if (typeof val === 'string') {
++                         setSearchValue(val);
++                       }
++                    }}
++                    onSelectionChange={(val) => {
++                       if (val) addFolder(val as string);
++                    }}
++                    value={searchValue}
++                  >
++                    <AutocompleteInput
++                      placeholder="Search or paste folder path..."
++                      className="font-mono text-xs"
++                    />
++                    {searchValue !== "" && (
++                      <AutocompletePopup aria-busy={isLoading || undefined}>
++                        <AutocompleteStatus className="text-muted-foreground text-xs">
++                          {isLoading ? (
++                            <span className="flex items-center gap-2">
++                              Searching... <Spinner className="size-3" />
++                            </span>
++                          ) : (
++                            `${searchResults.length} results found`
++                          )}
++                        </AutocompleteStatus>
++                        <AutocompleteList>
++                          {(path: string) => (
++                            <AutocompleteItem key={path} value={path} className="font-mono text-xs">
++                              {path}
++                            </AutocompleteItem>
++                          )}
++                        </AutocompleteList>
++                      </AutocompletePopup>
++                    )}
++                  </Autocomplete>
++                </div>
++                <Button
++                  size="sm"
++                  onClick={() => addFolder(searchValue)}
++                  disabled={!searchValue}
++                >
++                  <FolderPlus className="size-4 mr-1.5" />
++                  Add
++                </Button>
++              </div>
++
++              <Collapsible defaultOpen={true}>
++                <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
++                  <span>Currently Watching (${watchedFolders.length})</span>
++                  <ChevronDown className="size-4" />
++                </CollapsibleTrigger>
++                <CollapsibleContent>
++                  <div className="mt-2 space-y-1 max-h-[150px] overflow-y-auto pr-1">
++                    {watchedFolders.map((folder) => (
++                      <div key={folder} className="flex items-center justify-between group rounded-md border bg-muted/30 p-2">
++                        <span className="font-mono text-[10px] truncate flex-1" title={folder}>
++                          {folder}
++                        </span>
++                        <Button
++                          variant="ghost"
++                          size="icon-xs"
++                          className="opacity-0 group-hover:opacity-100"
++                          onClick={() => removeFolder(folder)}
++                        >
++                          <Trash2 className="size-3.5 text-destructive" />
++                        </Button>
++                      </div>
++                    ))}
++                  </div>
++                </CollapsibleContent>
++              </Collapsible>
+             </div>
+-          </Slider>
++          </div>
+         </DialogPanel>
+       </DialogPopup>
+     </Dialog>
+diff --git a/src/components/ui/autocomplete.tsx b/src/components/ui/autocomplete.tsx
+new file mode 100644
+index 0000000..eebeee5
+--- /dev/null
++++ b/src/components/ui/autocomplete.tsx
+@@ -0,0 +1,324 @@
++"use client";
++
++import { Autocomplete as AutocompletePrimitive } from "@base-ui/react/autocomplete";
++import { ChevronsUpDownIcon, XIcon } from "lucide-react";
++
++import { cn } from "@/lib/utils";
++import { Input } from "@/components/ui/input";
++import { ScrollArea } from "@/components/ui/scroll-area";
++
++const Autocomplete = AutocompletePrimitive.Root;
++
++function AutocompleteInput({
++  className,
++  showTrigger = false,
++  showClear = false,
++  startAddon,
++  size,
++  triggerProps,
++  clearProps,
++  ...props
++}: Omit<AutocompletePrimitive.Input.Props, "size"> & {
++  showTrigger?: boolean;
++  showClear?: boolean;
++  startAddon?: React.ReactNode;
++  size?: "sm" | "default" | "lg" | number;
++  ref?: React.Ref<HTMLInputElement>;
++  triggerProps?: AutocompletePrimitive.Trigger.Props;
++  clearProps?: AutocompletePrimitive.Clear.Props;
++}) {
++  const sizeValue = (size ?? "default") as "sm" | "default" | "lg" | number;
++
++  return (
++    <div className="relative not-has-[>*.w-full]:w-fit w-full text-foreground has-disabled:opacity-64">
++      {startAddon && (
++        <div
++          aria-hidden="true"
++          className="[&_svg]:-mx-0.5 pointer-events-none absolute inset-y-0 start-px z-10 flex items-center ps-[calc(--spacing(3)-1px)] opacity-80 has-[+[data-size=sm]]:ps-[calc(--spacing(2.5)-1px)] [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4"
++          data-slot="autocomplete-start-addon"
++        >
++          {startAddon}
++        </div>
++      )}
++      <AutocompletePrimitive.Input
++        className={cn(
++          startAddon &&
++            "data-[size=sm]:*:data-[slot=autocomplete-input]:ps-[calc(--spacing(7.5)-1px)] *:data-[slot=autocomplete-input]:ps-[calc(--spacing(8.5)-1px)] sm:data-[size=sm]:*:data-[slot=autocomplete-input]:ps-[calc(--spacing(7)-1px)] sm:*:data-[slot=autocomplete-input]:ps-[calc(--spacing(8)-1px)]",
++          sizeValue === "sm"
++            ? "has-[+[data-slot=autocomplete-trigger],+[data-slot=autocomplete-clear]]:*:data-[slot=autocomplete-input]:pe-6.5"
++            : "has-[+[data-slot=autocomplete-trigger],+[data-slot=autocomplete-clear]]:*:data-[slot=autocomplete-input]:pe-7",
++          className,
++        )}
++        data-slot="autocomplete-input"
++        render={<Input nativeInput size={sizeValue} />}
++        {...props}
++      />
++      {showTrigger && (
++        <AutocompleteTrigger
++          className={cn(
++            "-translate-y-1/2 absolute top-1/2 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent opacity-80 outline-none transition-colors pointer-coarse:after:absolute pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:opacity-100 has-[+[data-slot=autocomplete-clear]]:hidden sm:size-7 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
++            sizeValue === "sm" ? "end-0" : "end-0.5",
++          )}
++          {...triggerProps}
++        >
++          <AutocompletePrimitive.Icon data-slot="autocomplete-icon">
++            <ChevronsUpDownIcon />
++          </AutocompletePrimitive.Icon>
++        </AutocompleteTrigger>
++      )}
++      {showClear && (
++        <AutocompleteClear
++          className={cn(
++            "-translate-y-1/2 absolute top-1/2 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent opacity-80 outline-none transition-colors pointer-coarse:after:absolute pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:opacity-100 has-[+[data-slot=autocomplete-clear]]:hidden sm:size-7 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
++            sizeValue === "sm" ? "end-0" : "end-0.5",
++          )}
++          {...clearProps}
++        >
++          <XIcon />
++        </AutocompleteClear>
++      )}
++    </div>
++  );
++}
++
++function AutocompletePopup({
++  className,
++  children,
++  side = "bottom",
++  sideOffset = 4,
++  alignOffset,
++  align = "start",
++  anchor,
++  ...props
++}: AutocompletePrimitive.Popup.Props & {
++  align?: AutocompletePrimitive.Positioner.Props["align"];
++  sideOffset?: AutocompletePrimitive.Positioner.Props["sideOffset"];
++  alignOffset?: AutocompletePrimitive.Positioner.Props["alignOffset"];
++  side?: AutocompletePrimitive.Positioner.Props["side"];
++  anchor?: AutocompletePrimitive.Positioner.Props["anchor"];
++}) {
++  return (
++    <AutocompletePrimitive.Portal>
++      <AutocompletePrimitive.Positioner
++        align={align}
++        alignOffset={alignOffset}
++        anchor={anchor}
++        className="z-50 select-none"
++        data-slot="autocomplete-positioner"
++        side={side}
++        sideOffset={sideOffset}
++      >
++        <span
++          className={cn(
++            "relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding shadow-lg/5 transition-[scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
++            className,
++          )}
++        >
++          <AutocompletePrimitive.Popup
++            className="flex max-h-[min(var(--available-height),23rem)] flex-1 flex-col text-foreground"
++            data-slot="autocomplete-popup"
++            {...props}
++          >
++            {children}
++          </AutocompletePrimitive.Popup>
++        </span>
++      </AutocompletePrimitive.Positioner>
++    </AutocompletePrimitive.Portal>
++  );
++}
++
++function AutocompleteItem({
++  className,
++  children,
++  ...props
++}: AutocompletePrimitive.Item.Props) {
++  return (
++    <AutocompletePrimitive.Item
++      className={cn(
++        "flex min-h-8 cursor-default select-none items-center rounded-sm px-2 py-1 text-base outline-none data-disabled:pointer-events-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm",
++        className,
++      )}
++      data-slot="autocomplete-item"
++      {...props}
++    >
++      {children}
++    </AutocompletePrimitive.Item>
++  );
++}
++
++function AutocompleteSeparator({
++  className,
++  ...props
++}: AutocompletePrimitive.Separator.Props) {
++  return (
++    <AutocompletePrimitive.Separator
++      className={cn("mx-2 my-1 h-px bg-border last:hidden", className)}
++      data-slot="autocomplete-separator"
++      {...props}
++    />
++  );
++}
++
++function AutocompleteGroup({
++  className,
++  ...props
++}: AutocompletePrimitive.Group.Props) {
++  return (
++    <AutocompletePrimitive.Group
++      className={cn("[[role=group]+&]:mt-1.5", className)}
++      data-slot="autocomplete-group"
++      {...props}
++    />
++  );
++}
++
++function AutocompleteGroupLabel({
++  className,
++  ...props
++}: AutocompletePrimitive.GroupLabel.Props) {
++  return (
++    <AutocompletePrimitive.GroupLabel
++      className={cn(
++        "px-2 py-1.5 font-medium text-muted-foreground text-xs",
++        className,
++      )}
++      data-slot="autocomplete-group-label"
++      {...props}
++    />
++  );
++}
++
++function AutocompleteEmpty({
++  className,
++  ...props
++}: AutocompletePrimitive.Empty.Props) {
++  return (
++    <AutocompletePrimitive.Empty
++      className={cn(
++        "not-empty:p-2 text-center text-base text-muted-foreground sm:text-sm",
++        className,
++      )}
++      data-slot="autocomplete-empty"
++      {...props}
++    />
++  );
++}
++
++function AutocompleteRow({
++  className,
++  ...props
++}: AutocompletePrimitive.Row.Props) {
++  return (
++    <AutocompletePrimitive.Row
++      className={className}
++      data-slot="autocomplete-row"
++      {...props}
++    />
++  );
++}
++
++function AutocompleteValue({ ...props }: AutocompletePrimitive.Value.Props) {
++  return (
++    <AutocompletePrimitive.Value data-slot="autocomplete-value" {...props} />
++  );
++}
++
++function AutocompleteList({
++  className,
++  ...props
++}: AutocompletePrimitive.List.Props) {
++  return (
++    <ScrollArea scrollbarGutter scrollFade>
++      <AutocompletePrimitive.List
++        className={cn(
++          "not-empty:scroll-py-1 not-empty:p-1 in-data-has-overflow-y:pe-3",
++          className,
++        )}
++        data-slot="autocomplete-list"
++        {...props}
++      />
++    </ScrollArea>
++  );
++}
++
++function AutocompleteClear({
++  className,
++  ...props
++}: AutocompletePrimitive.Clear.Props) {
++  return (
++    <AutocompletePrimitive.Clear
++      className={cn(
++        "-translate-y-1/2 absolute end-0.5 top-1/2 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent opacity-80 outline-none transition-[color,background-color,box-shadow,opacity] pointer-coarse:after:absolute pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:opacity-100 sm:size-7 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
++        className,
++      )}
++      data-slot="autocomplete-clear"
++      {...props}
++    >
++      <XIcon />
++    </AutocompletePrimitive.Clear>
++  );
++}
++
++function AutocompleteStatus({
++  className,
++  ...props
++}: AutocompletePrimitive.Status.Props) {
++  return (
++    <AutocompletePrimitive.Status
++      className={cn(
++        "px-3 py-2 font-medium text-muted-foreground text-xs empty:m-0 empty:p-0",
++        className,
++      )}
++      data-slot="autocomplete-status"
++      {...props}
++    />
++  );
++}
++
++function AutocompleteCollection({
++  ...props
++}: AutocompletePrimitive.Collection.Props) {
++  return (
++    <AutocompletePrimitive.Collection
++      data-slot="autocomplete-collection"
++      {...props}
++    />
++  );
++}
++
++function AutocompleteTrigger({
++  className,
++  children,
++  ...props
++}: AutocompletePrimitive.Trigger.Props) {
++  return (
++    <AutocompletePrimitive.Trigger
++      className={className}
++      data-slot="autocomplete-trigger"
++      {...props}
++    >
++      {children}
++    </AutocompletePrimitive.Trigger>
++  );
++}
++
++const useAutocompleteFilter = AutocompletePrimitive.useFilter;
++
++export {
++  Autocomplete,
++  AutocompleteInput,
++  AutocompleteTrigger,
++  AutocompletePopup,
++  AutocompleteItem,
++  AutocompleteSeparator,
++  AutocompleteGroup,
++  AutocompleteGroupLabel,
++  AutocompleteEmpty,
++  AutocompleteValue,
++  AutocompleteList,
++  AutocompleteClear,
++  AutocompleteStatus,
++  AutocompleteRow,
++  AutocompleteCollection,
++  useAutocompleteFilter,
++};
+diff --git a/src/components/ui/collapsible.tsx b/src/components/ui/collapsible.tsx
+new file mode 100644
+index 0000000..368a53b
+--- /dev/null
++++ b/src/components/ui/collapsible.tsx
+@@ -0,0 +1,45 @@
++"use client";
++
++import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible";
++
++import { cn } from "@/lib/utils";
++
++function Collapsible({ ...props }: CollapsiblePrimitive.Root.Props) {
++  return <CollapsiblePrimitive.Root data-slot="collapsible" {...props} />;
++}
++
++function CollapsibleTrigger({
++  className,
++  ...props
++}: CollapsiblePrimitive.Trigger.Props) {
++  return (
++    <CollapsiblePrimitive.Trigger
++      className={cn("cursor-pointer", className)}
++      data-slot="collapsible-trigger"
++      {...props}
++    />
++  );
++}
++
++function CollapsiblePanel({
++  className,
++  ...props
++}: CollapsiblePrimitive.Panel.Props) {
++  return (
++    <CollapsiblePrimitive.Panel
++      className={cn(
++        "h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0",
++        className,
++      )}
++      data-slot="collapsible-panel"
++      {...props}
++    />
++  );
++}
++
++export {
++  Collapsible,
++  CollapsibleTrigger,
++  CollapsiblePanel,
++  CollapsiblePanel as CollapsibleContent,
++};
+diff --git a/src/components/ui/spinner.tsx b/src/components/ui/spinner.tsx
+new file mode 100644
+index 0000000..631fc01
+--- /dev/null
++++ b/src/components/ui/spinner.tsx
+@@ -0,0 +1,18 @@
++import { Loader2Icon } from "lucide-react";
++import { cn } from "@/lib/utils";
++
++function Spinner({
++  className,
++  ...props
++}: React.ComponentProps<typeof Loader2Icon>) {
++  return (
++    <Loader2Icon
++      aria-label="Loading"
++      className={cn("animate-spin", className)}
++      role="status"
++      {...props}
++    />
++  );
++}
++
++export { Spinner };
+On branch jules-13881908080811976582-48a74039
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	modified:   bun.lock
+	modified:   src-tauri/src/commands.rs
+	new file:   src-tauri/src/config.rs
+	modified:   src-tauri/src/lib.rs
+	modified:   src-tauri/src/watcher.rs
+	modified:   src/components/settings-dialog.tsx
+	new file:   src/components/ui/autocomplete.tsx
+	new file:   src/components/ui/collapsible.tsx
+	new file:   src/components/ui/spinner.tsx
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	changes.diff

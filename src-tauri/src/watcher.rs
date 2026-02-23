@@ -2,7 +2,7 @@ use crate::compression::{ImageFormat, Vips};
 use crate::platform::get_lib_path;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, serde::Serialize)]
@@ -12,12 +12,11 @@ struct NewFile {
 
 pub struct VipsState(pub Option<Arc<Vips>>);
 
-pub fn start_downloads_watcher(app: &tauri::AppHandle) {
-    let Some(downloads_dir) = dirs::download_dir() else {
-        eprintln!("Could not determine downloads directory");
-        return;
-    };
+pub struct WatcherHandle {
+    pub watcher: Mutex<notify::RecommendedWatcher>,
+}
 
+pub fn init_watcher(app: &tauri::AppHandle) {
     let lib_path = get_lib_path(app);
     let vips = match unsafe { Vips::new(&lib_path) } {
         Ok(v) => {
@@ -33,7 +32,7 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
     app.manage(VipsState(vips.clone()));
 
     let handle = app.clone();
-    let mut watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
+    let watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
         if let Ok(event) = res {
             let dominated = matches!(
                 event.kind,
@@ -48,10 +47,11 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
 
                     // Skip temporary/incomplete download files
                     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
-                        if ext.eq_ignore_ascii_case("tmp") || ext.eq_ignore_ascii_case("crdownload")
+                        let ext_lower = ext.to_lowercase();
+                        if ext_lower == "tmp" || ext_lower == "crdownload" || ext_lower == "part"
                         {
                             println!(
-                                "[downloads-watcher] Skipping temporary file: {}",
+                                "[watcher] Skipping temporary file: {}",
                                 path.display()
                             );
                             continue;
@@ -62,7 +62,7 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
                     if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
                         if stem.ends_with("_compressed") {
                             println!(
-                                "[downloads-watcher] Skipping compressed file: {}",
+                                "[watcher] Skipping compressed file: {}",
                                 path.display()
                             );
                             continue;
@@ -71,7 +71,7 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
 
                     let format = ImageFormat::from_path(file_path);
                     println!(
-                        "[downloads-watcher] File detected ({:?}): {} [format: {:?}]",
+                        "[watcher] File detected ({:?}): {} [format: {:?}]",
                         event.kind,
                         path.display(),
                         format
@@ -80,11 +80,13 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
                     let payload = NewFile {
                         path: path.display().to_string(),
                     };
+                    // We keep "new-download" event name for compatibility with frontend hooks for now,
+                    // though it now means "new file in watched folder"
                     match handle.emit("new-download", &payload) {
                         Ok(_) => {
-                            println!("[downloads-watcher] Emitted event for: {}", path.display())
+                            println!("[watcher] Emitted event for: {}", path.display())
                         }
-                        Err(e) => eprintln!("[downloads-watcher] Failed to emit event: {e}"),
+                        Err(e) => eprintln!("[watcher] Failed to emit event: {e}"),
                     }
 
                     // Auto-compress if it's a supported image format
@@ -95,14 +97,12 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
                             let p = path.to_path_buf();
                             std::thread::spawn(move || {
                                 if let Err(e) = crate::processor::process_file(&h, &v, &p) {
-                                    eprintln!("[downloads-watcher] Error: {e}");
+                                    eprintln!("[watcher] Error: {e}");
                                 }
                             });
                         }
                     }
                 }
-            } else {
-                println!("[downloads-watcher] Event (ignored): {:?}", event.kind);
             }
         }
     }) {
@@ -113,12 +113,29 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
         }
     };
 
-    if let Err(e) = watcher.watch(&downloads_dir, RecursiveMode::NonRecursive) {
-        eprintln!("Failed to watch downloads directory: {e}");
-        return;
+    let watcher_handle = WatcherHandle {
+        watcher: Mutex::new(watcher),
+    };
+
+    // Initial folders from config
+    let folders = {
+        let config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
+        config_manager.config.watched_folders.clone()
+    };
+
+    {
+        let mut w = watcher_handle.watcher.lock().unwrap();
+        for folder in folders {
+            let path = Path::new(&folder);
+            if path.exists() {
+                if let Err(e) = w.watch(path, RecursiveMode::NonRecursive) {
+                    eprintln!("Failed to watch directory {}: {}", folder, e);
+                } else {
+                    println!("Watching directory: {}", folder);
+                }
+            }
+        }
     }
 
-    // Leak the watcher so it lives for the entire app lifetime
-    std::mem::forget(watcher);
-    println!("Watching downloads directory: {}", downloads_dir.display());
+    app.manage(watcher_handle);
 }

@@ -142,3 +142,105 @@ pub async fn compress_files(
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn get_watched_folders() -> Vec<String> {
+    let config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
+    config_manager.config.watched_folders.clone()
+}
+
+#[tauri::command]
+pub fn add_watched_folder(
+    path: String,
+    watcher_state: tauri::State<'_, crate::watcher::WatcherHandle>,
+) -> Result<Vec<String>, String> {
+    let mut config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
+
+    let p = Path::new(&path);
+    if !p.exists() || !p.is_dir() {
+        return Err("Path does not exist or is not a directory".to_string());
+    }
+
+    config_manager.add_folder(path.clone());
+
+    let mut watcher = watcher_state.watcher.lock().unwrap();
+    let _ = watcher.watch(p, notify::RecursiveMode::NonRecursive);
+
+    Ok(config_manager.config.watched_folders.clone())
+}
+
+#[tauri::command]
+pub fn remove_watched_folder(
+    path: String,
+    watcher_state: tauri::State<'_, crate::watcher::WatcherHandle>,
+) -> Result<Vec<String>, String> {
+    let mut config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
+    config_manager.remove_folder(&path);
+
+    let mut watcher = watcher_state.watcher.lock().unwrap();
+    let _ = watcher.unwatch(Path::new(&path));
+
+    Ok(config_manager.config.watched_folders.clone())
+}
+
+#[tauri::command]
+pub async fn search_directories(query: String) -> Vec<String> {
+    if query.is_empty() {
+        let mut common = Vec::new();
+        if let Some(h) = dirs::home_dir() { common.push(h.display().to_string()); }
+        if let Some(d) = dirs::download_dir() { common.push(d.display().to_string()); }
+        if let Some(d) = dirs::document_dir() { common.push(d.display().to_string()); }
+        if let Some(p) = dirs::picture_dir() { common.push(p.display().to_string()); }
+        if let Some(d) = dirs::desktop_dir() { common.push(d.display().to_string()); }
+        return common;
+    }
+
+    let path = Path::new(&query);
+
+    // Determine the directory to search in and the prefix to match
+    let (search_dir, prefix) = if query.ends_with('/') || query.ends_with('\') {
+        (path, "")
+    } else if let Some(parent) = path.parent() {
+        let p_str = parent.as_os_str().to_string_lossy();
+        if p_str.is_empty() {
+             // If no parent, we might be looking at a relative path in current dir
+             // or just starting a path. On Unix, empty parent usually means relative.
+             if query.starts_with('/') {
+                 (Path::new("/"), &query[1..])
+             } else {
+                 (Path::new("."), query.as_str())
+             }
+        } else {
+            (parent, path.file_name().and_then(|s| s.to_str()).unwrap_or(""))
+        }
+    } else {
+        (Path::new("/"), query.as_str())
+    };
+
+    let mut results = Vec::new();
+
+    // If the path itself is a directory, include it as the first result
+    if path.is_dir() && !results.contains(&path.display().to_string()) {
+        results.push(path.display().to_string());
+    }
+
+    if let Ok(entries) = std::fs::read_dir(search_dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                        let full_path = entry.path().display().to_string();
+                        if !results.contains(&full_path) {
+                            results.push(full_path);
+                        }
+                    }
+                }
+            }
+            if results.len() >= 5 {
+                break;
+            }
+        }
+    }
+    results
+}
