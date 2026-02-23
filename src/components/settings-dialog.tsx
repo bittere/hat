@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Tuning2Linear } from "@solar-icons/react-perf";
 import { FolderPlus, Trash2, ChevronDown } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { Toggle } from "@/components/ui/toggle";
 import { Slider, SliderValue } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
+import { toastManager } from "@/components/ui/toast";
 import {
   Dialog,
   DialogTrigger,
@@ -39,30 +40,30 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     invoke<string[]>("get_watched_folders").then(setWatchedFolders);
   }, []);
 
-  useEffect(() => {
-    if (!searchValue) {
-      setSearchResults([]);
-      setIsLoading(false);
-      return;
-    }
-
+  const performSearch = useCallback(async (query: string) => {
     setIsLoading(true);
-    let ignore = false;
+    try {
+      const results = await invoke<string[]>("search_directories", { query });
+      setSearchResults(results);
+    } catch (err) {
+      console.error("Failed to search directories", err);
+      setSearchResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
+  useEffect(() => {
+    let ignore = false;
     const timeoutId = setTimeout(async () => {
-      try {
-        const results = await invoke<string[]>("search_directories", { query: searchValue });
-        if (!ignore) setSearchResults(results);
-      } catch (err) {
-        console.error("Failed to search directories", err);
-        if (!ignore) setSearchResults([]);
-      } finally {
-        if (!ignore) setIsLoading(false);
+      if (!ignore) {
+        performSearch(searchValue);
       }
     }, 300);
 
@@ -70,7 +71,7 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
       clearTimeout(timeoutId);
       ignore = true;
     };
-  }, [searchValue]);
+  }, [searchValue, performSearch]);
 
   const addFolder = async (path: string) => {
     if (!path) return;
@@ -78,8 +79,18 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
       const folders = await invoke<string[]>("add_watched_folder", { path });
       setWatchedFolders(folders);
       setSearchValue("");
+      toastManager.add({
+        title: "Folder added",
+        description: `Now watching ${path}`,
+        type: "info",
+      });
     } catch (err) {
       console.error("Failed to add folder", err);
+      toastManager.add({
+        title: "Failed to add folder",
+        description: String(err),
+        type: "error",
+      });
     }
   };
 
@@ -89,6 +100,11 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
       setWatchedFolders(folders);
     } catch (err) {
       console.error("Failed to remove folder", err);
+      toastManager.add({
+        title: "Failed to remove folder",
+        description: String(err),
+        type: "error",
+      });
     }
   };
 
@@ -142,8 +158,13 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
                     <AutocompleteInput
                       placeholder="Search or paste folder path..."
                       className="font-mono text-xs"
+                      onFocus={() => {
+                        setIsFocused(true);
+                        performSearch(searchValue);
+                      }}
+                      onBlur={() => setIsFocused(false)}
                     />
-                    {searchValue !== "" && (
+                    {(searchValue !== "" || isFocused) && (
                       <AutocompletePopup aria-busy={isLoading || undefined}>
                         <AutocompleteStatus className="text-muted-foreground text-xs">
                           {isLoading ? (

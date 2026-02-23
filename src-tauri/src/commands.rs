@@ -162,10 +162,15 @@ pub fn add_watched_folder(
         return Err("Path does not exist or is not a directory".to_string());
     }
 
-    config_manager.add_folder(path.clone());
-
     let mut watcher = watcher_state.watcher.lock().unwrap();
-    let _ = watcher.watch(p, notify::RecursiveMode::NonRecursive);
+    if let Some(ref mut w) = *watcher {
+        w.watch(p, notify::RecursiveMode::NonRecursive)
+            .map_err(|e| format!("Failed to watch directory: {}", e))?;
+    } else {
+        return Err("File watcher is not initialized".to_string());
+    }
+
+    config_manager.add_folder(path.clone());
 
     Ok(config_manager.config.watched_folders.clone())
 }
@@ -176,10 +181,13 @@ pub fn remove_watched_folder(
     watcher_state: tauri::State<'_, crate::watcher::WatcherHandle>,
 ) -> Result<Vec<String>, String> {
     let mut config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
-    config_manager.remove_folder(&path);
 
     let mut watcher = watcher_state.watcher.lock().unwrap();
-    let _ = watcher.unwatch(Path::new(&path));
+    if let Some(ref mut w) = *watcher {
+        let _ = w.unwatch(Path::new(&path));
+    }
+
+    config_manager.remove_folder(&path);
 
     Ok(config_manager.config.watched_folders.clone())
 }

@@ -13,7 +13,7 @@ struct NewFile {
 pub struct VipsState(pub Option<Arc<Vips>>);
 
 pub struct WatcherHandle {
-    pub watcher: Mutex<notify::RecommendedWatcher>,
+    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
 }
 
 pub fn init_watcher(app: &tauri::AppHandle) {
@@ -32,7 +32,7 @@ pub fn init_watcher(app: &tauri::AppHandle) {
     app.manage(VipsState(vips.clone()));
 
     let handle = app.clone();
-    let watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
+    let watcher_res = notify::recommended_watcher(move |res: Result<Event, _>| {
         if let Ok(event) = res {
             let dominated = matches!(
                 event.kind,
@@ -80,8 +80,6 @@ pub fn init_watcher(app: &tauri::AppHandle) {
                     let payload = NewFile {
                         path: path.display().to_string(),
                     };
-                    // We keep "new-download" event name for compatibility with frontend hooks for now,
-                    // though it now means "new file in watched folder"
                     match handle.emit("new-download", &payload) {
                         Ok(_) => {
                             println!("[watcher] Emitted event for: {}", path.display())
@@ -105,27 +103,25 @@ pub fn init_watcher(app: &tauri::AppHandle) {
                 }
             }
         }
-    }) {
-        Ok(w) => w,
+    });
+
+    let (watcher, initial_folders) = match watcher_res {
+        Ok(w) => {
+            let folders = {
+                let config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
+                config_manager.config.watched_folders.clone()
+            };
+            (Some(w), folders)
+        }
         Err(e) => {
             eprintln!("Failed to create file watcher: {e}");
-            return;
+            (None, Vec::new())
         }
     };
 
-    let watcher_handle = WatcherHandle {
-        watcher: Mutex::new(watcher),
-    };
-
-    // Initial folders from config
-    let folders = {
-        let config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
-        config_manager.config.watched_folders.clone()
-    };
-
-    {
-        let mut w = watcher_handle.watcher.lock().unwrap();
-        for folder in folders {
+    let mut final_watcher = watcher;
+    if let Some(ref mut w) = final_watcher {
+        for folder in initial_folders {
             let path = Path::new(&folder);
             if path.exists() {
                 if let Err(e) = w.watch(path, RecursiveMode::NonRecursive) {
@@ -137,5 +133,7 @@ pub fn init_watcher(app: &tauri::AppHandle) {
         }
     }
 
-    app.manage(watcher_handle);
+    app.manage(WatcherHandle {
+        watcher: Mutex::new(final_watcher),
+    });
 }
