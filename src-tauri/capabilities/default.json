@@ -5,6 +5,11 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default", "notification:default"
+    "opener:default",
+    "notification:default",
+    "get_watched_folders",
+    "add_watched_folder",
+    "remove_watched_folder",
+    "search_directories"
   ]
 }

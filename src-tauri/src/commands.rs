@@ -1,3 +1,4 @@
+use notify::Watcher;
 use crate::compression::{compressed_output_path, CompressionRecord, ImageFormat};
 use crate::log::COMPRESSION_LOG;
 use crate::watcher::VipsState;

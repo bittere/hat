@@ -177,7 +177,7 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
 
               <Collapsible defaultOpen={true}>
                 <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-                  <span>Currently Watching (${watchedFolders.length})</span>
+                  <span>Currently Watching ({watchedFolders.length})</span>
                   <ChevronDown className="size-4" />
                 </CollapsibleTrigger>
                 <CollapsibleContent>
