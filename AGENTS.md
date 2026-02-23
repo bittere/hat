@@ -20,6 +20,7 @@ Note: USE ONLY OFFICIAL COSS UI COMPONENTS. INSTALL THEM WITH THE CLI. DO NOT WR
 ---
 - Path alias: `@/*` → `./src/*`. Utility: `src/lib/utils.ts` (`cn()` via clsx + tailwind-merge).
 - Hooks go in `src/hooks/`. Rust↔frontend communication via Tauri events (`emit`/`listen`) and commands (`invoke`).
+- When using Solar icons, import using: `import { <icon name> } from "@solar-icons/react-perf"`, where icon name is made up of the name of the icon and it's variant eg. BillCrossLinear.
 
 ## Code Style
 - **TypeScript:** strict, no unused locals/params. Use named exports, kebab-case filenames.

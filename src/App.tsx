@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { addDays, format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Slider, SliderValue } from "@/components/ui/slider";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
 import { toastManager } from "@/components/ui/toast";
 import { useDownloadsWatcher } from "@/hooks/use-downloads-watcher";
 import { useCompressionEvents } from "@/hooks/use-compression-events";
 import { StatisticsCard } from "@/components/statistics-card";
 import { CompressionHistoryCard } from "@/components/compression-history-card";
+import { BillCrossLinear, CalendarAddLinear } from "@solar-icons/react-perf";
 import { extractFileName } from "@/lib/format";
 import "./App.css";
 
@@ -25,6 +31,31 @@ function App() {
   } = useCompressionEvents();
 
   const [isHovering, setIsHovering] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterDate, setFilterDate] = useState<DateRange | undefined>();
+  const [filterMonth, setFilterMonth] = useState(new Date());
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const filteredHistory = useMemo(() => {
+    const query = search.toLowerCase();
+    return history.filter((record) => {
+      if (query && !extractFileName(record.initial_path).toLowerCase().includes(query)) {
+        return false;
+      }
+      if (filterDate?.from) {
+        const recordDate = new Date(record.timestamp * 1000);
+        recordDate.setHours(0, 0, 0, 0);
+        const from = new Date(filterDate.from);
+        from.setHours(0, 0, 0, 0);
+        const to = filterDate.to ? new Date(filterDate.to) : from;
+        to.setHours(0, 0, 0, 0);
+        if (recordDate < from || recordDate > to) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [history, search, filterDate]);
 
   useEffect(() => {
     let unlistenDragEnter: () => void;
@@ -104,9 +135,6 @@ function App() {
               <SliderValue className="text-sm tabular-nums text-muted-foreground" />
             </div>
           </Slider>
-          <p className="text-xs text-muted-foreground px-1">
-            Higher = more compression, smaller files. Lower = less compression, larger files.
-          </p>
 
           <StatisticsCard history={history} />
 
@@ -132,33 +160,131 @@ function App() {
           </div>
         </div>
 
-        {/* Right column – Compression History */}
+        {/* Right column – History */}
         <div className="flex flex-col gap-2 min-w-0 flex-1">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium">Compression History</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium shrink-0">History</h2>
+            <Input
+              placeholder="Search…"
+              size="sm"
+              value={search}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+            />
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                  />
+                }
+              >
+                <CalendarAddLinear className="size-4" aria-hidden="true" />
+                {filterDate?.from ? (
+                  filterDate.to
+                    ? `${format(filterDate.from, "MMM d")} – ${format(filterDate.to, "MMM d")}`
+                    : format(filterDate.from, "MMM d")
+                ) : "Date"}
+              </PopoverTrigger>
+              <PopoverPopup align="end" className="w-auto p-0">
+                <div className="flex max-sm:flex-col">
+                  <div className="relative py-1 ps-1 max-sm:order-1 max-sm:border-t">
+                    <div className="flex h-full flex-col sm:border-e sm:pe-3">
+                      {([
+                        ["Today", 0, 0],
+                        ["Yesterday", -1, -1],
+                        ["Last 3 days", -3, 0],
+                        ["Last week", -7, 0],
+                      ] as const).map(([label, fromOffset, toOffset]) => (
+                        <Button
+                          key={label}
+                          className="w-full justify-start"
+                          onClick={() => {
+                            const today = new Date();
+                            const from = addDays(today, fromOffset);
+                            const to = addDays(today, toOffset);
+                            setFilterDate({ from, to });
+                            setFilterMonth(from);
+                            setFilterOpen(false);
+                          }}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <Calendar
+                    className="max-sm:pb-3 sm:ps-2"
+                    mode="range"
+                    month={filterMonth}
+                    onMonthChange={setFilterMonth}
+                    selected={filterDate}
+                    onSelect={setFilterDate}
+                    disabled={{ after: new Date() }}
+                  />
+                </div>
+              </PopoverPopup>
+            </Popover>
+            {filterDate?.from && (
+              <Button variant="destructive" size="sm" className="shrink-0 text-xs" onClick={() => setFilterDate(undefined)}>
+                Clear
+              </Button>
+            )}
           </div>
           {history.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-muted rounded-2xl gap-2 p-8 text-center text-muted-foreground">
               <p className="text-sm">No compressions yet.</p>
               <p className="text-xs max-w-[200px]">Download an image or drop one here to get started.</p>
             </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <BillCrossLinear className="size-12" />
+              <p className="text-sm">No results found.</p>
+            </div>
           ) : (
             <ScrollArea className="flex-1">
-              <div className="grid grid-cols-1 gap-2 pr-3">
-                {[...history].reverse().map((record, i) => {
-                  const cannotRecompress =
-                    record.original_deleted ||
-                    recompressed.has(record.timestamp) ||
-                    record.quality >= 100;
-                  return (
-                    <CompressionHistoryCard
-                      key={`${record.timestamp}-${i}`}
-                      record={record}
-                      cannotRecompress={cannotRecompress}
-                      onRecompress={handleRecompress}
-                    />
-                  );
-                })}
+              <div className="flex flex-col gap-2 pr-3">
+                {(() => {
+                  const reversed = [...filteredHistory].reverse();
+                  let lastDateLabel = "";
+                  return reversed.map((record, i) => {
+                    const date = new Date(record.timestamp * 1000);
+                    const today = new Date();
+                    const yesterday = new Date();
+                    yesterday.setDate(today.getDate() - 1);
+                    const isToday = date.toDateString() === today.toDateString();
+                    const isYesterday = date.toDateString() === yesterday.toDateString();
+                    const dateLabel = isToday
+                      ? "Today"
+                      : isYesterday
+                        ? "Yesterday"
+                        : date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+                    const showLabel = dateLabel !== lastDateLabel;
+                    lastDateLabel = dateLabel;
+
+                    const cannotRecompress =
+                      record.original_deleted ||
+                      recompressed.has(record.timestamp) ||
+                      record.quality >= 100;
+                    return (
+                      <div key={`${record.timestamp}-${i}`}>
+                        {showLabel && (
+                          <p className="text-xs text-muted-foreground font-medium px-1 pb-1 pt-2 first:pt-0">
+                            {dateLabel}
+                          </p>
+                        )}
+                        <CompressionHistoryCard
+                          record={record}
+                          cannotRecompress={cannotRecompress}
+                          onRecompress={handleRecompress}
+                        />
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </ScrollArea>
           )}

@@ -13,6 +13,7 @@ export function CompressionHistoryCard({ record, cannotRecompress, onRecompress 
   const fileName = extractFileName(record.initial_path);
   const saved = record.initial_size - record.compressed_size;
   const pct = record.initial_size > 0 ? ((saved / record.initial_size) * 100).toFixed(1) : "0";
+  const time = new Date(record.timestamp * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
   return (
     <Card className={`rounded-xl${cannotRecompress ? " opacity-50" : ""}`}>
@@ -21,7 +22,7 @@ export function CompressionHistoryCard({ record, cannotRecompress, onRecompress 
           {fileName}
         </CardTitle>
         <CardDescription className="text-xs">
-          {record.initial_format.toUpperCase()} → {record.final_format.toUpperCase()} · Level {record.quality}
+          {record.initial_format.toUpperCase()} → {record.final_format.toUpperCase()} · Level {record.quality} · {time}
         </CardDescription>
       </CardHeader>
       <CardPanel className="px-3 pb-1 pt-0">
