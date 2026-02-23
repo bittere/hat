@@ -6,7 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "notification:default",
-    "allow-app-commands"
+    "notification:default"
   ]
 }
