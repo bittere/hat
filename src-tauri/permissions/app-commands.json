@@ -1,0 +1,17 @@
+{
+  "identifier": "allow-app-commands",
+  "description": "Allows all application commands",
+  "commands": [
+    "set_quality",
+    "get_quality",
+    "get_compression_history",
+    "clear_compression_history",
+    "delete_original_images",
+    "recompress",
+    "compress_files",
+    "get_watched_folders",
+    "add_watched_folder",
+    "remove_watched_folder",
+    "search_directories"
+  ]
+}
