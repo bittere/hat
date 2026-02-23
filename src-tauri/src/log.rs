@@ -28,10 +28,10 @@ impl CompressionLog {
 
     pub fn save(&self) {
         if let Some(parent) = self.path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) { eprintln!("Failed to create log directory: {}", e); }
         }
         if let Ok(json) = serde_json::to_string_pretty(&self.records) {
-            let _ = std::fs::write(&self.path, json);
+            if let Err(e) = std::fs::write(&self.path, json) { eprintln!("Failed to save log: {}", e); }
         }
     }
 }

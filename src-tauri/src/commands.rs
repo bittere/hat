@@ -198,7 +198,7 @@ pub async fn search_directories(query: String) -> Vec<String> {
     let path = Path::new(&query);
 
     // Determine the directory to search in and the prefix to match
-    let (search_dir, prefix) = if query.ends_with('/') || query.ends_with('\') {
+    let (search_dir, prefix) = if query.ends_with('/') || query.ends_with('\\') {
         (path, "")
     } else if let Some(parent) = path.parent() {
         let p_str = parent.as_os_str().to_string_lossy();
