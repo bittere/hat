@@ -1,5 +1,4 @@
 name: Build
-
 on:
   push:
     branches:
@@ -9,7 +8,6 @@ on:
   pull_request:
     branches:
       - "**"
-
 jobs:
   build-tauri:
     permissions:
@@ -30,61 +28,27 @@ jobs:
           - platform: windows-latest
             args: ""
             libvips_target: win32-x64
-
     runs-on: ${{ matrix.platform }}
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
-
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Cache Rust build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            src-tauri/target/
-          key: rust-${{ matrix.platform }}-${{ matrix.args }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            rust-${{ matrix.platform }}-${{ matrix.args }}-
-
-      - name: Cache Bun dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ matrix.platform }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ matrix.platform }}-
-
-      - name: Cache libvips download
-        uses: actions/cache@v4
-        with:
-          path: vendor/libvips
-          key: libvips-${{ matrix.libvips_target }}
-
       - name: Install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
       - name: Install frontend dependencies
         run: bun install
-
       - name: Setup libvips
         run: bun run setup:libvips
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LIBVIPS_TARGET: ${{ matrix.libvips_target }}
-
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
