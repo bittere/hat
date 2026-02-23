@@ -244,11 +244,18 @@ impl Vips {
         let ui = 101u8.saturating_sub(q);
         let compression = ((ui as f32 / 100.0) * 9.0).round().clamp(0.0, 9.0) as i32;
 
-        let suffix = format!(
-            "{}[compression={},palette=true,colours=256,Q=100,dither=1.0,effort=10,filter=248,strip=true]",
-            output_str(output)?,
-            compression,
-        );
+        let out = output_str(output)?;
+        let suffix = if ui >= 80 {
+            format!(
+                "{}[compression={},palette,colours=256,Q={},dither=0.5,effort=10,filter=248,strip,bitdepth=8]",
+                out, compression, q,
+            )
+        } else {
+            format!(
+                "{}[compression={},Q={},effort=10,filter=248,strip,bitdepth=16]",
+                out, compression, q,
+            )
+        };
 
         println!("[compression] PNG save params: {}", suffix);
         let img = self.load_image(input)?;
