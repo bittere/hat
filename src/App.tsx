@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { addDays, format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Slider, SliderValue } from "@/components/ui/slider";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,24 +118,14 @@ function App() {
           <img src="/app-icon.svg" className="w-6 h-6" alt="Logo" />
           Hat
         </h1>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <SettingsDialog quality={quality} onQualityChange={handleQualityChange} />
+          <ThemeToggle />
+        </div>
       </header>
       <div className="flex gap-4 p-4 h-[calc(100vh-57px)]">
         {/* Left column – Settings & Statistics */}
         <div className="flex flex-col gap-3 w-80 shrink-0">
-          <Slider
-            min={1}
-            max={100}
-            value={quality}
-            onValueChange={handleQualityChange}
-            className="space-y-2 bg-card p-4 rounded-xl border border-border shadow-xs"
-          >
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Compression Level</label>
-              <SliderValue className="text-sm tabular-nums text-muted-foreground" />
-            </div>
-          </Slider>
-
           <StatisticsCard history={history} />
 
           <div className="flex flex-col gap-2 mt-auto">
@@ -167,6 +157,7 @@ function App() {
             <Input
               placeholder="Search…"
               size="sm"
+              className="max-w-64"
               value={search}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
             />
@@ -249,12 +240,13 @@ function App() {
               <div className="flex flex-col gap-2 pr-3">
                 {(() => {
                   const reversed = [...filteredHistory].reverse();
-                  let lastDateLabel = "";
-                  return reversed.map((record, i) => {
+                  const today = new Date();
+                  const yesterday = new Date();
+                  yesterday.setDate(today.getDate() - 1);
+
+                  const groups: { label: string; items: { record: typeof reversed[0]; index: number }[] }[] = [];
+                  reversed.forEach((record, i) => {
                     const date = new Date(record.timestamp * 1000);
-                    const today = new Date();
-                    const yesterday = new Date();
-                    yesterday.setDate(today.getDate() - 1);
                     const isToday = date.toDateString() === today.toDateString();
                     const isYesterday = date.toDateString() === yesterday.toDateString();
                     const dateLabel = isToday
@@ -262,28 +254,37 @@ function App() {
                       : isYesterday
                         ? "Yesterday"
                         : date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-                    const showLabel = dateLabel !== lastDateLabel;
-                    lastDateLabel = dateLabel;
-
-                    const cannotRecompress =
-                      record.original_deleted ||
-                      recompressed.has(record.timestamp) ||
-                      record.quality >= 100;
-                    return (
-                      <div key={`${record.timestamp}-${i}`}>
-                        {showLabel && (
-                          <p className="text-xs text-muted-foreground font-medium px-1 pb-1 pt-2 first:pt-0">
-                            {dateLabel}
-                          </p>
-                        )}
-                        <CompressionHistoryCard
-                          record={record}
-                          cannotRecompress={cannotRecompress}
-                          onRecompress={handleRecompress}
-                        />
-                      </div>
-                    );
+                    const last = groups[groups.length - 1];
+                    if (last && last.label === dateLabel) {
+                      last.items.push({ record, index: i });
+                    } else {
+                      groups.push({ label: dateLabel, items: [{ record, index: i }] });
+                    }
                   });
+
+                  return groups.map((group, gi) => (
+                    <div key={group.label}>
+                      <p className={`text-xs text-muted-foreground font-medium px-1 pb-1${gi > 0 ? " pt-2" : ""}`}>
+                        {group.label}
+                      </p>
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+                        {group.items.map(({ record, index }) => {
+                          const cannotRecompress =
+                            record.original_deleted ||
+                            recompressed.has(record.timestamp) ||
+                            record.quality >= 100;
+                          return (
+                            <CompressionHistoryCard
+                              key={`${record.timestamp}-${index}`}
+                              record={record}
+                              cannotRecompress={cannotRecompress}
+                              onRecompress={handleRecompress}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
                 })()}
               </div>
             </ScrollArea>

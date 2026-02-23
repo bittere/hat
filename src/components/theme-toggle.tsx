@@ -1,4 +1,4 @@
-import { Moon, Sun } from "@solar-icons/react-perf/Bold";
+import { MoonLinear, SunLinear } from "@solar-icons/react-perf";
 import { Toggle } from "@/components/ui/toggle";
 import { useTheme } from "@/components/theme-provider";
 
@@ -18,7 +18,7 @@ export function ThemeToggle() {
       size="sm"
       aria-label="Toggle theme"
     >
-      {isDark ? <Moon /> : <Sun />}
+      {isDark ? <MoonLinear /> : <SunLinear />}
     </Toggle>
   );
 }
