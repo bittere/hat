@@ -35,6 +35,8 @@ pub fn run() {
             commands::add_watched_folder,
             commands::remove_watched_folder,
             commands::search_directories,
+            commands::get_show_background_notification,
+            commands::set_show_background_notification,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -48,7 +50,14 @@ pub fn run() {
                     let _ = window_clone.hide();
                     api.prevent_close();
 
-                    if !HAS_NOTIFIED_ON_CLOSE.load(Ordering::Relaxed) {
+                    let config = app_handle.state::<Mutex<crate::config::ConfigManager>>();
+                    let show_notif = if let Ok(c) = config.lock() {
+                        c.config.show_background_notification
+                    } else {
+                        true
+                    };
+
+                    if show_notif && !HAS_NOTIFIED_ON_CLOSE.load(Ordering::Relaxed) {
                         let _ = app_handle
                             .notification()
                             .builder()

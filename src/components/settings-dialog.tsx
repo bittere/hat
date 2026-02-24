@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
+import { SettingsCheckbox } from "@/components/ui/settings-checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { useTheme } from "@/components/theme-provider";
 
@@ -64,6 +65,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showBackgroundNotification, setShowBackgroundNotification] = useState(true);
   const dialogOpenRef = useRef(false);
   const { theme, setTheme } = useTheme();
 
@@ -75,6 +77,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
 
   useEffect(() => {
     invoke<string[]>("get_watched_folders").then(setWatchedFolders);
+    invoke<boolean>("get_show_background_notification").then(setShowBackgroundNotification);
   }, []);
 
   const performSearch = useCallback(async (query: string) => {
@@ -212,6 +215,15 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
     );
   };
 
+  const handleToggleBackgroundNotification = async (checked: boolean) => {
+    try {
+      await invoke("set_show_background_notification", { value: checked });
+      setShowBackgroundNotification(checked);
+    } catch (err) {
+      console.error("Failed to update notification setting", err);
+    }
+  };
+
   const selectedTheme = themeItems.find((t) => t.value === theme) ?? themeItems[0];
 
   return (
@@ -234,6 +246,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
               <TabsTab value="compression">Compression</TabsTab>
               <TabsTab value="folders">Folders</TabsTab>
               <TabsTab value="appearance">Appearance</TabsTab>
+              <TabsTab value="notifications">Notifications</TabsTab>
             </TabsList>
 
             {/* Compression Tab */}
@@ -394,10 +407,22 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
                 </div>
               </div>
             </TabsPanel>
+
+            {/* Notifications Tab */}
+            <TabsPanel value="notifications">
+              <div className="space-y-4 pt-2">
+                <SettingsCheckbox
+                  checked={showBackgroundNotification}
+                  onCheckedChange={handleToggleBackgroundNotification}
+                  title="Background Operation Alert"
+                  description="Show a notification when Hat continues to run in the background after closing the window."
+                />
+              </div>
+            </TabsPanel>
           </Tabs>
         </DialogPanel>
         <DialogFooter>
-          <DialogClose render={<Button variant="ghost" size="sm" className="w-full">Close</Button>} />
+          <DialogClose render={<Button variant="outline" size="sm" className="w-full">Close</Button>} />
         </DialogFooter>
       </DialogPopup>
     </Dialog>

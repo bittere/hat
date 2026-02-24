@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub struct AppConfig {
     pub watched_folders: Vec<String>,
     pub quality: u8,
+    pub show_background_notification: bool,
 }
 
 impl Default for AppConfig {
@@ -17,6 +18,7 @@ impl Default for AppConfig {
         Self {
             watched_folders,
             quality: crate::DEFAULT_QUALITY,
+            show_background_notification: true,
         }
     }
 }
@@ -66,6 +68,11 @@ impl ConfigManager {
 
     pub fn set_quality(&mut self, quality: u8) {
         self.config.quality = quality;
+        let _ = self.save();
+    }
+
+    pub fn set_show_background_notification(&mut self, show: bool) {
+        self.config.show_background_notification = show;
         let _ = self.save();
     }
 }

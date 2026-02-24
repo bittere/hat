@@ -30,6 +30,24 @@ pub fn get_quality(
 }
 
 #[tauri::command]
+pub fn get_show_background_notification(
+    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
+) -> Result<bool, String> {
+    let config_manager = config.lock().map_err(|e| e.to_string())?;
+    Ok(config_manager.config.show_background_notification)
+}
+
+#[tauri::command]
+pub fn set_show_background_notification(
+    value: bool,
+    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
+) -> Result<bool, String> {
+    let mut config_manager = config.lock().map_err(|e| e.to_string())?;
+    config_manager.set_show_background_notification(value);
+    Ok(value)
+}
+
+#[tauri::command]
 pub fn get_compression_history(
     log: tauri::State<'_, Mutex<crate::log::CompressionLog>>,
 ) -> Vec<CompressionRecord> {
