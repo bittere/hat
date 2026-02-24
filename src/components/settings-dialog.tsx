@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Tuning2Linear, AltArrowDownLinear, AddFolderLinear } from "@solar-icons/react-perf";
-import { FolderPlus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toggle } from "@/components/ui/toggle";
 import { Slider, SliderValue } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
+import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogTrigger,
@@ -34,12 +41,19 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
 import { Spinner } from "@/components/ui/spinner";
+import { useTheme } from "@/components/theme-provider";
 
 interface SettingsDialogProps {
   quality: number;
   onQualityChange: (value: number) => void;
   onOpenChange?: (open: boolean) => void;
 }
+
+const themeItems = [
+  { label: "System", value: "system" },
+  { label: "Light", value: "light" },
+  { label: "Dark", value: "dark" },
+] as const;
 
 export function SettingsDialog({ quality, onQualityChange, onOpenChange }: SettingsDialogProps) {
   const [searchValue, setSearchValue] = useState("");
@@ -50,6 +64,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const dialogOpenRef = useRef(false);
+  const { theme, setTheme } = useTheme();
 
   const handleOpenChange = useCallback((open: boolean) => {
     dialogOpenRef.current = open;
@@ -125,8 +140,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
           if (!dialogOpenRef.current) return;
           setIsDragOver(false);
 
-          // Filter out files, only add folders (or files if they are actually images)
-          // The backend add_watched_folder handles the directory check.
+          // The backend add_watched_folder validates that the path is a directory.
           for (const path of event.payload.paths) {
             addFolder(path);
           }
@@ -177,6 +191,8 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
     );
   };
 
+  const selectedTheme = themeItems.find((t) => t.value === theme) ?? themeItems[0];
+
   return (
     <Dialog onOpenChange={handleOpenChange}>
       <DialogTrigger
@@ -189,136 +205,174 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
       <DialogPopup>
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Configure compression options.</DialogDescription>
+          <DialogDescription>Configure compression and appearance.</DialogDescription>
         </DialogHeader>
         <DialogPanel>
-          <div className="space-y-6">
-            <Slider
-              min={1}
-              max={100}
-              value={quality}
-              onValueChange={(val) => {
-                if (typeof val === "number") {
-                  onQualityChange(val);
-                } else if (Array.isArray(val) && typeof val[0] === "number") {
-                  onQualityChange(val[0]);
-                }
-              }}
-              className="space-y-2"
-            >
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground">Compression Level</label>
-                <SliderValue className="text-sm tabular-nums text-muted-foreground" />
-              </div>
-            </Slider>
+          <Tabs defaultValue="compression">
+            <TabsList>
+              <TabsTab value="compression">Compression</TabsTab>
+              <TabsTab value="folders">Folders</TabsTab>
+              <TabsTab value="appearance">Appearance</TabsTab>
+            </TabsList>
 
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-foreground">Watched Folders</label>
-
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Autocomplete
-                    items={searchResults}
-                    onValueChange={(val) => {
-                      if (val) {
-                        setSearchValue(val);
-                        addFolder(val);
-                      }
-                    }}
-                    value={searchValue}
-                  >
-                    <AutocompleteInput
-                      placeholder="Search or paste folder path..."
-                      className="text-xs"
-                      onFocus={() => {
-                        setIsFocused(true);
-                        performSearch(searchValue);
-                      }}
-                      onBlur={() => setIsFocused(false)}
-                    />
-                    {(searchValue !== "" || isFocused) && (
-                      <AutocompletePopup aria-busy={isLoading || undefined}>
-                        <AutocompleteStatus className="text-muted-foreground text-xs">
-                          {isLoading ? (
-                            <span className="flex items-center gap-2">
-                              Searching... <Spinner className="size-3" />
-                            </span>
-                          ) : (
-                            `${searchResults.length} results found`
-                          )}
-                        </AutocompleteStatus>
-                        <AutocompleteList>
-                          {(path: string) => (
-                            <AutocompleteItem key={path} value={path} className="text-xs">
-                              {path}
-                            </AutocompleteItem>
-                          )}
-                        </AutocompleteList>
-                      </AutocompletePopup>
-                    )}
-                  </Autocomplete>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => addFolder(searchValue)}
-                  disabled={!searchValue}
+            {/* Compression Tab */}
+            <TabsPanel value="compression">
+              <div className="space-y-4 pt-2">
+                <Slider
+                  min={1}
+                  max={100}
+                  value={quality}
+                  onValueChange={(val) => {
+                    if (typeof val === "number") {
+                      onQualityChange(val);
+                    } else if (Array.isArray(val) && typeof val[0] === "number") {
+                      onQualityChange(val[0]);
+                    }
+                  }}
+                  className="space-y-2"
                 >
-                  <FolderPlus className="size-4 mr-1.5" />
-                  Add
-                </Button>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-foreground">Compression Level</label>
+                    <SliderValue className="text-sm tabular-nums text-muted-foreground" />
+                  </div>
+                </Slider>
               </div>
+            </TabsPanel>
 
-              <div
-                className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors ${isDragOver
-                  ? "border-primary bg-primary/5 text-primary"
-                  : "border-muted-foreground/25 text-muted-foreground"
-                  }`}
-              >
-                <AddFolderLinear className="size-6" />
-                <p className="text-xs">Drop folders here to watch</p>
-              </div>
-
-              <Collapsible>
-                <CollapsibleTrigger className="flex items-center gap-2 text-sm data-panel-open:[&_svg]:rotate-180 [&_svg]:transition-transform [&_svg]:duration-200">
-                  <span>Currently Watching ({watchedFolders.length})</span>
-                  <AltArrowDownLinear className="size-4" />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="mt-2 max-h-[150px] overflow-y-auto pr-1 select-none">
-                    <CheckboxGroup value={selectedFolders} className="gap-2">
-                      <label className="flex items-center gap-2 pb-2">
-                        <Checkbox
-                          checked={allSelected}
-                          indeterminate={someSelected}
-                          onCheckedChange={toggleSelectAll}
-                        />
-                        <span className="text-xs font-medium">Select All</span>
-                      </label>
-                      {watchedFolders.map((folder) => (
-                        <label key={folder} className="flex items-center gap-2" title={folder}>
-                          <Checkbox
-                            checked={selectedFolders.includes(folder)}
-                            onCheckedChange={(checked) => toggleFolder(folder, checked as boolean)}
-                          />
-                          <span className="text-sm truncate">{folder}</span>
-                        </label>
-                      ))}
-                    </CheckboxGroup>
+            {/* Folders Tab */}
+            <TabsPanel value="folders">
+              <div className="space-y-3 pt-2">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Autocomplete
+                      items={searchResults}
+                      onValueChange={(val) => {
+                        if (val) {
+                          setSearchValue(val);
+                          addFolder(val);
+                        }
+                      }}
+                      value={searchValue}
+                    >
+                      <AutocompleteInput
+                        placeholder="Search or paste folder path..."
+                        className="text-xs"
+                        onFocus={() => {
+                          setIsFocused(true);
+                          performSearch(searchValue);
+                        }}
+                        onBlur={() => setIsFocused(false)}
+                      />
+                      {(searchValue !== "" || isFocused) && (
+                        <AutocompletePopup aria-busy={isLoading || undefined}>
+                          <AutocompleteStatus className="text-muted-foreground text-xs">
+                            {isLoading ? (
+                              <span className="flex items-center gap-2">
+                                Searching... <Spinner className="size-3" />
+                              </span>
+                            ) : (
+                              `${searchResults.length} results found`
+                            )}
+                          </AutocompleteStatus>
+                          <AutocompleteList>
+                            {(path: string) => (
+                              <AutocompleteItem key={path} value={path} className="text-xs">
+                                {path}
+                              </AutocompleteItem>
+                            )}
+                          </AutocompleteList>
+                        </AutocompletePopup>
+                      )}
+                    </Autocomplete>
                   </div>
                   <Button
-                    variant="destructive"
-                    size="xs"
-                    disabled={selectedFolders.length === 0}
-                    onClick={removeSelectedFolders}
-                    className="mt-2"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addFolder(searchValue)}
+                    disabled={!searchValue}
                   >
-                    Delete Selected ({selectedFolders.length})
+                    <AddFolderLinear className="size-4 mr-1.5" />
+                    Add
                   </Button>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
-          </div>
+                </div>
+
+                <div
+                  className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors ${isDragOver
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-muted-foreground/25 text-muted-foreground"
+                    }`}
+                >
+                  <AddFolderLinear className="size-6" />
+                  <p className="text-xs">Drop folders here to watch</p>
+                </div>
+
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-2 text-sm data-panel-open:[&_svg]:rotate-180 [&_svg]:transition-transform [&_svg]:duration-200">
+                    <span>Currently Watching ({watchedFolders.length})</span>
+                    <AltArrowDownLinear className="size-4" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-2 max-h-[150px] overflow-y-auto pr-1 select-none">
+                      <CheckboxGroup value={selectedFolders} className="gap-2">
+                        <label className="flex items-center gap-2 pb-2">
+                          <Checkbox
+                            checked={allSelected}
+                            indeterminate={someSelected}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                          <span className="text-xs font-medium">Select All</span>
+                        </label>
+                        {watchedFolders.map((folder) => (
+                          <label key={folder} className="flex items-center gap-2" title={folder}>
+                            <Checkbox
+                              checked={selectedFolders.includes(folder)}
+                              onCheckedChange={(checked) => toggleFolder(folder, checked as boolean)}
+                            />
+                            <span className="text-sm truncate">{folder}</span>
+                          </label>
+                        ))}
+                      </CheckboxGroup>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="xs"
+                      disabled={selectedFolders.length === 0}
+                      onClick={removeSelectedFolders}
+                      className="mt-2"
+                    >
+                      Delete Selected ({selectedFolders.length})
+                    </Button>
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            </TabsPanel>
+
+            {/* Appearance Tab */}
+            <TabsPanel value="appearance">
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-foreground">Theme</label>
+                  <Select
+                    value={selectedTheme.value}
+                    onValueChange={(val) => {
+                      setTheme(val as "light" | "dark" | "system");
+                    }}
+                  >
+                    <SelectTrigger size="sm" className="w-32">
+                      <SelectValue>{selectedTheme.label}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      {themeItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
+              </div>
+            </TabsPanel>
+          </Tabs>
         </DialogPanel>
         <DialogFooter>
           <DialogClose render={<Button variant="ghost" size="sm" className="w-full">Close</Button>} />

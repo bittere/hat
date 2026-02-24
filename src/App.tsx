@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
@@ -12,6 +11,7 @@ import { useFilteredHistory } from "@/hooks/use-filtered-history";
 import { StatisticsCard } from "@/components/statistics-card";
 import { HistoryFilters } from "@/components/history-filters";
 import { HistoryList } from "@/components/history-list";
+import { FileSendLinear } from "@solar-icons/react-perf";
 import { extractFileName } from "@/lib/format";
 import "./App.css";
 
@@ -39,7 +39,9 @@ function App() {
     }
   }, [handleManualCompress]);
 
-  useDragDrop(handleManualDrop);
+  const { isDragOver } = useDragDrop(handleManualDrop);
+
+  const showDropZone = isDragOver && !settingsOpen.current;
 
   const handleNewDownload = useCallback((path: string) => {
     const fileName = extractFileName(path);
@@ -53,19 +55,24 @@ function App() {
   useDownloadsWatcher(handleNewDownload);
 
   return (
-    <main className="relative">
+    <main className="relative flex flex-col h-screen">
       <DragOverlay />
-      <header className="flex w-full items-center justify-between px-4 py-3 border-b border-border">
+      {showDropZone && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-primary/5 backdrop-blur-sm pointer-events-none border-4 border-dashed border-primary m-2 rounded-2xl animate-in fade-in zoom-in duration-200 text-primary">
+          <FileSendLinear className="size-16" />
+          <p className="text-sm font-medium">Drop images here to compress</p>
+        </div>
+      )}
+      <header className="flex w-full items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <h1 className="text-lg font-semibold flex items-center gap-2">
           <img src="/app-icon.svg" className="w-6 h-6" alt="Logo" />
           Hat
         </h1>
         <div className="flex items-center gap-1">
           <SettingsDialog quality={quality} onQualityChange={handleQualityChange} onOpenChange={(open) => { settingsOpen.current = open; }} />
-          <ThemeToggle />
         </div>
       </header>
-      <div className="flex gap-4 p-4 h-[calc(100vh-57px)]">
+      <div className="flex gap-4 p-4 flex-1 min-h-0">
         {/* Left column – Settings & Statistics */}
         <div className="flex flex-col gap-3 w-80 shrink-0">
           <StatisticsCard history={history} />
@@ -75,7 +82,11 @@ function App() {
               variant="outline"
               size="sm"
               className="w-full"
-              onClick={handleClearHistory}
+              onClick={() => {
+                handleClearHistory();
+                setSearch("");
+                setFilterDate(undefined);
+              }}
               disabled={history.length === 0}
             >
               Clear History
@@ -83,7 +94,7 @@ function App() {
             <Button
               variant="destructive-outline"
               size="sm"
-              className="w-full opacity-80 hover:opacity-100"
+              className="w-full"
               onClick={handleDeleteOriginals}
               disabled={history.length === 0}
             >

@@ -36,7 +36,7 @@ export function CompressionHistoryCard({ record, cannotRecompress, onRecompress 
             {formatBytes(record.initial_size)} → {formatBytes(record.compressed_size)}
           </span>
           <span className={saved > 0 ? "text-primary font-bold" : ""}>
-            {saved >= 0 ? `−${pct}%` : `+${Math.abs(Number(pct))}%`}
+            {saved >= 0 ? `↓ ${pct}%` : `↑ ${Math.abs(Number(pct))}%`}
           </span>
         </div>
       </CardPanel>

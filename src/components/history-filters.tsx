@@ -34,6 +34,7 @@ export function HistoryFilters({
         className="max-w-64"
         value={search}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearchChange(e.target.value)}
+        aria-label="Search compression history"
       />
       <Popover open={filterOpen} onOpenChange={setFilterOpen}>
         <PopoverTrigger
@@ -96,7 +97,7 @@ export function HistoryFilters({
         </PopoverPopup>
       </Popover>
       <Button
-        variant="destructive"
+        variant="ghost"
         size="sm"
         className="shrink-0 text-xs"
         disabled={!(filterDate?.from || search)}

@@ -45,7 +45,7 @@ export function HistoryList({
         {historyGroups.map((group, gi) => (
           <div key={group.label}>
             <p
-              className={`text-xs text-muted-foreground font-medium px-1 pb-1${gi > 0 ? " pt-2" : ""
+              className={`text-xs text-muted-foreground font-medium px-1 pb-2${gi > 0 ? " pt-4" : ""
                 }`}
             >
               {group.label}

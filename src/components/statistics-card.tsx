@@ -19,19 +19,19 @@ export function StatisticsCard({ history }: StatisticsCardProps) {
       <CardPanel>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div>
-            <p className="text-muted-foreground text-xs font-medium">Files Processed</p>
+            <p className="text-muted-foreground font-medium">Files Processed</p>
             <p className="font-semibold tabular-nums text-sm">{history.length}</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs font-medium">Total Saved</p>
+            <p className="text-muted-foreground font-medium">Total Saved</p>
             <p className="font-semibold tabular-nums text-sm text-primary">{formatBytes(totalSaved)}</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs font-medium">Original Size</p>
+            <p className="text-muted-foreground font-medium">Original Size</p>
             <p className="font-semibold tabular-nums text-sm">{formatBytes(totalOriginal)}</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs font-medium">Reduction</p>
+            <p className="text-muted-foreground font-medium">Reduction</p>
             <p className="font-semibold tabular-nums text-sm">{avgReduction}%</p>
           </div>
         </div>

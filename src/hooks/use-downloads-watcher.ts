@@ -8,7 +8,6 @@ interface NewFile {
 export function useDownloadsWatcher(onNewFile: (path: string) => void) {
   useEffect(() => {
     const unlisten = listen<NewFile>("new-download", (event) => {
-      console.log("[downloads-watcher] Received event:", event.payload);
       onNewFile(event.payload.path);
     });
 
