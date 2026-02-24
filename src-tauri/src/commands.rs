@@ -269,26 +269,47 @@ pub fn remove_watched_folder(
 
 #[tauri::command]
 pub async fn search_directories(query: String) -> Vec<String> {
-    if query.is_empty() {
-        let mut common = Vec::new();
-        if let Some(h) = dirs::home_dir() {
-            common.push(h.display().to_string());
-        }
-        if let Some(d) = dirs::download_dir() {
-            common.push(d.display().to_string());
-        }
-        if let Some(d) = dirs::document_dir() {
-            common.push(d.display().to_string());
-        }
-        if let Some(p) = dirs::picture_dir() {
-            common.push(p.display().to_string());
-        }
-        if let Some(d) = dirs::desktop_dir() {
-            common.push(d.display().to_string());
-        }
-        return common;
+    let mut results = Vec::new();
+    let query_lower = query.to_lowercase();
+
+    // 1. Collect special "common" folders
+    let mut special_folders = Vec::new();
+    if let Some(h) = dirs::home_dir() {
+        special_folders.push(h.display().to_string());
+    }
+    if let Some(d) = dirs::download_dir() {
+        special_folders.push(d.display().to_string());
+    }
+    if let Some(d) = dirs::document_dir() {
+        special_folders.push(d.display().to_string());
+    }
+    if let Some(p) = dirs::picture_dir() {
+        special_folders.push(p.display().to_string());
+    }
+    if let Some(d) = dirs::desktop_dir() {
+        special_folders.push(d.display().to_string());
     }
 
+    // 2. If query is empty, return all special folders
+    if query.is_empty() {
+        return special_folders;
+    }
+
+    // 3. Filter special folders that match the query (start with it)
+    for folder in special_folders {
+        if folder.to_lowercase().starts_with(&query_lower) {
+            if !results.contains(&folder) {
+                results.push(folder);
+            }
+        }
+    }
+
+    // If we already have 5, no need to search FS
+    if results.len() >= 5 {
+        return results;
+    }
+
+    // 4. Standard directory search
     let path = Path::new(&query);
 
     // Determine the directory to search in and the prefix to match
@@ -297,8 +318,6 @@ pub async fn search_directories(query: String) -> Vec<String> {
     } else if let Some(parent) = path.parent() {
         let p_str = parent.as_os_str().to_string_lossy();
         if p_str.is_empty() {
-            // If no parent, we might be looking at a relative path in current dir
-            // or just starting a path. On Unix, empty parent usually means relative.
             if query.starts_with('/') {
                 (Path::new("/"), &query[1..])
             } else {
@@ -314,30 +333,39 @@ pub async fn search_directories(query: String) -> Vec<String> {
         (Path::new("/"), query.as_str())
     };
 
-    let mut results = Vec::new();
-
-    // If the path itself is a directory, include it as the first result
-    if path.is_dir() && !results.contains(&path.display().to_string()) {
-        results.push(path.display().to_string());
+    // If the path itself is a directory, include it
+    if path.is_dir() {
+        let p_str = path.display().to_string();
+        if !results.contains(&p_str) {
+            results.push(p_str);
+        }
     }
 
     if let Ok(entries) = std::fs::read_dir(search_dir) {
+        let mut fs_results = Vec::new();
         for entry in entries.flatten() {
             if let Ok(file_type) = entry.file_type() {
                 if file_type.is_dir() {
                     let name = entry.file_name().to_string_lossy().to_string();
                     if name.to_lowercase().starts_with(&prefix.to_lowercase()) {
                         let full_path = entry.path().display().to_string();
-                        if !results.contains(&full_path) {
-                            results.push(full_path);
-                        }
+                        fs_results.push(full_path);
                     }
                 }
             }
-            if results.len() >= 5 {
-                break;
+        }
+        // Sort FS results by length to prefer shallower paths
+        fs_results.sort_by_key(|a| a.len());
+
+        for r in fs_results {
+            if !results.contains(&r) {
+                results.push(r);
+                if results.len() >= 5 {
+                    break;
+                }
             }
         }
     }
+
     results
 }

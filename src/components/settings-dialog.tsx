@@ -292,16 +292,16 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
                     <Autocomplete
                       items={searchResults}
                       onValueChange={(val) => {
-                        if (val) {
-                          setSearchValue(val);
-                          addFolder(val);
-                        }
+                        if (val) setSearchValue(val as string);
                       }}
                       value={searchValue}
+                      filter={null}
                     >
                       <AutocompleteInput
                         placeholder="Search or paste folder path..."
                         className="text-xs"
+                        value={searchValue}
+                        onInput={(e: React.FormEvent<HTMLInputElement>) => setSearchValue(e.currentTarget.value)}
                         onFocus={() => {
                           setIsFocused(true);
                           performSearch(searchValue);
