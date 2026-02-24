@@ -8,20 +8,46 @@ on:
     paths:
       - "src/**"
       - "src-tauri/**"
+      - "package.json"
+      - "bun.lock"
   pull_request:
     branches:
       - "**"
     paths:
       - "src/**"
       - "src-tauri/**"
+      - "package.json"
+      - "bun.lockb"
 
-# This block prevents duplicate runs for pushes and PRs
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
+  # 1. FAIL-FAST JOB: Runs in seconds, prevents wasting minutes on bad code
+  lint:
+    name: Lint & Format Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          
+      - name: Check formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - name: Run clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+  # 2. HEAVY MATRIX JOB
   build-tauri:
+    name: Build (${{ matrix.libvips_target }})
+    needs: lint  # Wait for the lint job to succeed
     permissions:
       contents: write
     strategy:
@@ -43,24 +69,35 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+      
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
       - name: Install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          
       - name: Install frontend dependencies
         run: bun install
+        
       - name: Setup libvips
         run: bun run setup:libvips
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LIBVIPS_TARGET: ${{ matrix.libvips_target }}
+          
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
