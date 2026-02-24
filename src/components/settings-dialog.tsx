@@ -7,6 +7,7 @@ import { Slider, SliderValue } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   Select,
   SelectTrigger,
@@ -118,6 +119,26 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
       });
     }
   }, []);
+
+  const handleBrowseFolders = useCallback(async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: true,
+        title: "Select folders to watch",
+      });
+
+      if (selected && Array.isArray(selected)) {
+        for (const path of selected) {
+          await addFolder(path);
+        }
+      } else if (selected && typeof selected === "string") {
+        await addFolder(selected);
+      }
+    } catch (err) {
+      console.error("Failed to open folder picker", err);
+    }
+  }, [addFolder]);
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -297,13 +318,14 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
                 </div>
 
                 <div
-                  className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors ${isDragOver
+                  className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors cursor-pointer hover:border-primary hover:bg-primary/5 hover:text-primary ${isDragOver
                     ? "border-primary bg-primary/5 text-primary"
                     : "border-muted-foreground/25 text-muted-foreground"
                     }`}
+                  onClick={handleBrowseFolders}
                 >
                   <AddFolderLinear className="size-6" />
-                  <p className="text-xs">Drop folders here to watch</p>
+                  <p className="text-xs">Drop folders here to watch, or click to browse</p>
                 </div>
 
                 <Collapsible>
