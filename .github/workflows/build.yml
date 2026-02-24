@@ -5,9 +5,15 @@ on:
       - "**"
     tags:
       - "v*"
+    paths:
+      - "src/**"
+      - "src-tauri/**"
   pull_request:
     branches:
       - "**"
+    paths:
+      - "src/**"
+      - "src-tauri/**"
 jobs:
   build-tauri:
     permissions:
