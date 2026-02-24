@@ -1,4 +1,5 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardPanel, CardFooter } from "@/components/ui/card";
+import { ArrowDownLinear, ArrowUpLinear } from "@solar-icons/react-perf";
 import { Button } from "@/components/ui/button";
 import type { CompressionRecord } from "@/lib/types";
 import { formatBytes, extractFileName, extractDirectory } from "@/lib/format";
@@ -35,8 +36,18 @@ export function CompressionHistoryCard({ record, cannotRecompress, onRecompress 
           <span>
             {formatBytes(record.initial_size)} → {formatBytes(record.compressed_size)}
           </span>
-          <span className={saved > 0 ? "text-primary font-bold" : ""}>
-            {saved >= 0 ? `↓ ${pct}%` : `↑ ${Math.abs(Number(pct))}%`}
+          <span className={cn("flex items-center gap-0.5", saved > 0 && "text-primary font-bold")}>
+            {saved >= 0 ? (
+              <>
+                <ArrowDownLinear className="size-3" />
+                {pct}%
+              </>
+            ) : (
+              <>
+                <ArrowUpLinear className="size-3" />
+                {Math.abs(Number(pct))}%
+              </>
+            )}
           </span>
         </div>
       </CardPanel>
