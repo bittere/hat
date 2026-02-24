@@ -7,103 +7,6 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
 
-#[tauri::command]
-pub fn set_quality(
-    value: u8,
-    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
-) -> Result<u8, String> {
-    let clamped = value.clamp(1, 100);
-    let mut config_manager = config.lock().map_err(|e| e.to_string())?;
-
-    let previous = config_manager.config.quality;
-    config_manager.set_quality(clamped);
-    info!("[compression] Quality changed: {previous} → {clamped}");
-    Ok(clamped)
-}
-
-#[tauri::command]
-pub fn get_quality(
-    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
-) -> Result<u8, String> {
-    let config_manager = config.lock().map_err(|e| e.to_string())?;
-    Ok(config_manager.config.quality)
-}
-
-#[tauri::command]
-pub fn get_show_background_notification(
-    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
-) -> Result<bool, String> {
-    let config_manager = config.lock().map_err(|e| e.to_string())?;
-    Ok(config_manager.config.show_background_notification)
-}
-
-#[tauri::command]
-pub fn set_show_background_notification(
-    value: bool,
-    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
-) -> Result<bool, String> {
-    let mut config_manager = config.lock().map_err(|e| e.to_string())?;
-    config_manager.set_show_background_notification(value);
-    Ok(value)
-}
-
-#[tauri::command]
-pub fn get_show_system_notifications(
-    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
-) -> Result<bool, String> {
-    let config_manager = config.lock().map_err(|e| e.to_string())?;
-    Ok(config_manager.config.show_system_notifications)
-}
-
-#[tauri::command]
-pub fn set_show_system_notifications(
-    value: bool,
-    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
-) -> Result<bool, String> {
-    let mut config_manager = config.lock().map_err(|e| e.to_string())?;
-    config_manager.set_show_system_notifications(value);
-    Ok(value)
-}
-
-#[tauri::command]
-pub fn get_compression_history(
-    log: tauri::State<'_, Mutex<crate::log::CompressionLog>>,
-) -> Vec<CompressionRecord> {
-    log.lock().map(|l| l.records.clone()).unwrap_or_default()
-}
-
-#[tauri::command]
-pub fn clear_compression_history(log: tauri::State<'_, Mutex<crate::log::CompressionLog>>) {
-    if let Ok(mut log) = log.lock() {
-        log.clear();
-    }
-}
-
-#[tauri::command]
-pub fn delete_original_images(
-    log: tauri::State<'_, Mutex<crate::log::CompressionLog>>,
-) -> Result<u32, String> {
-    let mut log = log.lock().map_err(|e| e.to_string())?;
-
-    let mut deleted = 0u32;
-    for record in log.records.iter_mut() {
-        if record.original_deleted {
-            continue;
-        }
-        let path = Path::new(&record.initial_path);
-        if path.exists() {
-            if let Err(e) = std::fs::remove_file(path) {
-                error!("[cleanup] Failed to delete {}: {e}", record.initial_path);
-            } else {
-                info!("[cleanup] Deleted original: {}", record.initial_path);
-                deleted += 1;
-            }
-        }
-        record.original_deleted = true;
-    }
-    let _ = log.save();
-    Ok(deleted)
-}
 
 #[tauri::command]
 pub fn recompress(
@@ -167,7 +70,6 @@ pub fn recompress(
         final_format: format.to_string(),
         quality,
         timestamp,
-        original_deleted: false,
     };
 
     info!(

@@ -28,7 +28,6 @@ pub fn run() {
             commands::get_quality,
             commands::get_compression_history,
             commands::clear_compression_history,
-            commands::delete_original_images,
             commands::recompress,
             commands::compress_files,
             commands::get_watched_folders,

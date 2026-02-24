@@ -74,8 +74,6 @@ pub struct CompressionRecord {
     pub final_format: String,
     pub quality: u8,
     pub timestamp: u64,
-    #[serde(default)]
-    pub original_deleted: bool,
 }
 
 // ---------------------------------------------------------------------------

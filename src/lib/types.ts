@@ -7,7 +7,6 @@ export interface CompressionRecord {
   final_format: string;
   quality: number;
   timestamp: number;
-  original_deleted: boolean;
   status?: "processing" | "completed" | "failed";
 }
 

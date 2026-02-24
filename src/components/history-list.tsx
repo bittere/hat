@@ -53,7 +53,6 @@ export function HistoryList({
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
               {group.items.map(({ record, index }) => {
                 const cannotRecompress =
-                  record.original_deleted ||
                   recompressed.has(record.timestamp) ||
                   record.quality >= 100;
                 return (

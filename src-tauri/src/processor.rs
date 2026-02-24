@@ -130,7 +130,6 @@ pub fn process_file(
             final_format: format.to_string(),
             quality: current_quality,
             timestamp,
-            original_deleted: false,
         };
 
         // Log it

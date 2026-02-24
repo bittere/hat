@@ -36,7 +36,6 @@ export function useCompressionEvents() {
           final_format: "",
           quality: 0,
           timestamp,
-          original_deleted: false,
           status: "processing"
         };
         return [...prev, newRecord];
@@ -73,7 +72,6 @@ export function useCompressionEvents() {
           final_format: "",
           quality: 0,
           timestamp: event.payload.timestamp,
-          original_deleted: false,
           status: "failed"
         };
         return [...prev, newRecord];
@@ -129,23 +127,6 @@ export function useCompressionEvents() {
     }
   }, []);
 
-  const handleDeleteOriginals = useCallback(async () => {
-    try {
-      const deleted = await invoke<number>("delete_original_images");
-      setHistory((prev) => prev.map((r) => ({ ...r, original_deleted: true })));
-      toastManager.add({
-        title: "Originals deleted",
-        description: `${deleted} original image${deleted === 1 ? "" : "s"} deleted.`,
-        type: "info",
-      });
-    } catch (e) {
-      toastManager.add({
-        title: "Failed to delete originals",
-        description: String(e),
-        type: "error",
-      });
-    }
-  }, []);
 
   const qualityTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const handleQualityChange = useCallback(
@@ -178,7 +159,6 @@ export function useCompressionEvents() {
     recompressed,
     handleRecompress,
     handleClearHistory,
-    handleDeleteOriginals,
     handleQualityChange,
     handleManualCompress,
   };
