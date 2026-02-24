@@ -1,8 +1,9 @@
 use crate::compression::{ImageFormat, Vips};
 use crate::platform::get_lib_path;
+use log::{error, info};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, serde::Serialize)]
@@ -10,30 +11,31 @@ struct NewFile {
     path: String,
 }
 
-pub struct VipsState(pub Option<Arc<Vips>>);
+pub struct VipsState {
+    pub vips: Option<Arc<Vips>>,
+}
 
-pub fn start_downloads_watcher(app: &tauri::AppHandle) {
-    let Some(downloads_dir) = dirs::download_dir() else {
-        eprintln!("Could not determine downloads directory");
-        return;
-    };
+pub struct WatcherHandle {
+    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+}
 
+pub fn init_watcher(app: &tauri::AppHandle) {
     let lib_path = get_lib_path(app);
     let vips = match unsafe { Vips::new(&lib_path) } {
         Ok(v) => {
-            println!("[compression] libvips loaded from {}", lib_path.display());
+            info!("[compression] libvips loaded from {}", lib_path.display());
             Some(Arc::new(v))
         }
         Err(e) => {
-            eprintln!("[compression] Failed to load libvips, auto-compression disabled: {e}");
+            error!("[compression] Failed to load libvips, auto-compression disabled: {e}");
             None
         }
     };
 
-    app.manage(VipsState(vips.clone()));
+    app.manage(VipsState { vips: vips.clone() });
 
     let handle = app.clone();
-    let mut watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
+    let watcher_res = notify::recommended_watcher(move |res: Result<Event, _>| {
         if let Ok(event) = res {
             let dominated = matches!(
                 event.kind,
@@ -48,12 +50,9 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
 
                     // Skip temporary/incomplete download files
                     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
-                        if ext.eq_ignore_ascii_case("tmp") || ext.eq_ignore_ascii_case("crdownload")
-                        {
-                            println!(
-                                "[downloads-watcher] Skipping temporary file: {}",
-                                path.display()
-                            );
+                        let ext_lower = ext.to_lowercase();
+                        if ext_lower == "tmp" || ext_lower == "crdownload" || ext_lower == "part" {
+                            info!("[watcher] Skipping temporary file: {}", path.display());
                             continue;
                         }
                     }
@@ -61,17 +60,14 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
                     // Skip files that are already compressed outputs
                     if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
                         if stem.ends_with("_compressed") {
-                            println!(
-                                "[downloads-watcher] Skipping compressed file: {}",
-                                path.display()
-                            );
+                            info!("[watcher] Skipping compressed file: {}", path.display());
                             continue;
                         }
                     }
 
                     let format = ImageFormat::from_path(file_path);
-                    println!(
-                        "[downloads-watcher] File detected ({:?}): {} [format: {:?}]",
+                    info!(
+                        "[watcher] File detected ({:?}): {} [format: {:?}]",
                         event.kind,
                         path.display(),
                         format
@@ -82,9 +78,9 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
                     };
                     match handle.emit("new-download", &payload) {
                         Ok(_) => {
-                            println!("[downloads-watcher] Emitted event for: {}", path.display())
+                            info!("[watcher] Emitted event for: {}", path.display())
                         }
-                        Err(e) => eprintln!("[downloads-watcher] Failed to emit event: {e}"),
+                        Err(e) => error!("[watcher] Failed to emit event: {e}"),
                     }
 
                     // Auto-compress if it's a supported image format
@@ -95,30 +91,46 @@ pub fn start_downloads_watcher(app: &tauri::AppHandle) {
                             let p = path.to_path_buf();
                             std::thread::spawn(move || {
                                 if let Err(e) = crate::processor::process_file(&h, &v, &p) {
-                                    eprintln!("[downloads-watcher] Error: {e}");
+                                    error!("[watcher] Error: {h:?}: {e}");
                                 }
                             });
                         }
                     }
                 }
-            } else {
-                println!("[downloads-watcher] Event (ignored): {:?}", event.kind);
             }
         }
-    }) {
-        Ok(w) => w,
+    });
+
+    let (watcher, initial_folders) = match watcher_res {
+        Ok(w) => {
+            let folders = {
+                let config = app.state::<Mutex<crate::config::ConfigManager>>();
+                let config_manager = config.lock().unwrap();
+                config_manager.config.watched_folders.clone()
+            };
+            (Some(w), folders)
+        }
         Err(e) => {
-            eprintln!("Failed to create file watcher: {e}");
-            return;
+            error!("Failed to create file watcher: {e}");
+            (None, Vec::new())
         }
     };
 
-    if let Err(e) = watcher.watch(&downloads_dir, RecursiveMode::NonRecursive) {
-        eprintln!("Failed to watch downloads directory: {e}");
-        return;
+    let mut final_watcher = watcher;
+    if let Some(ref mut w) = final_watcher {
+        for folder in initial_folders {
+            let path = Path::new(&folder);
+            if path.exists() {
+                if let Err(e) = w.watch(path, RecursiveMode::NonRecursive) {
+                    error!("Failed to watch directory {}: {}", folder, e);
+                } else {
+                    info!("Watching directory: {}", folder);
+                }
+            }
+        }
     }
 
-    // Leak the watcher so it lives for the entire app lifetime
-    std::mem::forget(watcher);
-    println!("Watching downloads directory: {}", downloads_dir.display());
+    app.manage(WatcherHandle {
+        watcher: Mutex::new(final_watcher),
+    });
 }

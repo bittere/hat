@@ -1,4 +1,5 @@
 use libloading::Library;
+use log::info;
 use serde::Serialize;
 use std::ffi::CString;
 use std::fs;
@@ -132,6 +133,12 @@ pub struct Vips {
 }
 
 impl Vips {
+    /// Creates a new Vips instance by loading the shared library from the given path.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it loads a dynamic library and interacts with C FFI.
+    /// It assumes the provided `lib_path` points to a valid libvips installation.
     pub unsafe fn new(lib_path: &Path) -> Result<Self> {
         let lib = Library::new(lib_path)?;
 
@@ -165,9 +172,7 @@ impl Vips {
             if ptr.is_null() {
                 return String::new();
             }
-            let msg = std::ffi::CStr::from_ptr(ptr)
-                .to_string_lossy()
-                .into_owned();
+            let msg = std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned();
             (self.fn_error_clear)();
             msg
         }
@@ -176,8 +181,7 @@ impl Vips {
     fn load_image(&self, path: &Path) -> Result<*mut c_void> {
         let cpath = path_to_cstring(path)?;
         // NULL terminates the variadic arg list
-        let img =
-            unsafe { (self.fn_new_from_file)(cpath.as_ptr(), std::ptr::null::<c_char>()) };
+        let img = unsafe { (self.fn_new_from_file)(cpath.as_ptr(), std::ptr::null::<c_char>()) };
         if img.is_null() {
             return Err(CompressionError::Vips(format!(
                 "failed to load {}: {}",
@@ -222,7 +226,10 @@ impl Vips {
         // The UI sends a "compression level" (1-100) where higher = more compression.
         // libvips Q is the inverse: higher Q = higher quality = less compression.
         let q = (101u8.saturating_sub(quality)).clamp(1, 100);
-        println!("[compression] compression_level={} → libvips Q={}", quality, q);
+        info!(
+            "[compression] compression_level={} → libvips Q={}",
+            quality, q
+        );
 
         match format {
             ImageFormat::Png => self.compress_png(input, output, q),
@@ -257,14 +264,19 @@ impl Vips {
             )
         };
 
-        println!("[compression] PNG save params: {}", suffix);
+        info!("[compression] PNG save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] PNG {} → {} bytes (q={})", input.display(), size, q);
+        info!(
+            "[compression] PNG {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
         Ok(size)
     }
 
@@ -276,33 +288,39 @@ impl Vips {
             q,
         );
 
-        println!("[compression] JPEG save params: {}", suffix);
+        info!("[compression] JPEG save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] JPEG {} → {} bytes (q={})", input.display(), size, q);
+        println!(
+            "[compression] JPEG {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
         Ok(size)
     }
 
     pub fn compress_webp(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
         let q = quality.clamp(1, 100);
-        let suffix = format!(
-            "{}[Q={},strip=true]",
-            output_str(output)?,
-            q,
-        );
+        let suffix = format!("{}[Q={},strip=true]", output_str(output)?, q,);
 
-        println!("[compression] WebP save params: {}", suffix);
+        info!("[compression] WebP save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] WebP {} → {} bytes (q={})", input.display(), size, q);
+        info!(
+            "[compression] WebP {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
         Ok(size)
     }
 
@@ -314,33 +332,39 @@ impl Vips {
             q,
         );
 
-        println!("[compression] TIFF save params: {}", suffix);
+        info!("[compression] TIFF save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] TIFF {} → {} bytes (q={})", input.display(), size, q);
+        info!(
+            "[compression] TIFF {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
         Ok(size)
     }
 
     pub fn compress_heif(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
         let q = quality.clamp(1, 100);
-        let suffix = format!(
-            "{}[Q={},strip=true]",
-            output_str(output)?,
-            q,
-        );
+        let suffix = format!("{}[Q={},strip=true]", output_str(output)?, q,);
 
-        println!("[compression] HEIF save params: {}", suffix);
+        info!("[compression] HEIF save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] HEIF {} → {} bytes (q={})", input.display(), size, q);
+        info!(
+            "[compression] HEIF {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
         Ok(size)
     }
 
@@ -348,39 +372,41 @@ impl Vips {
         let q = quality.clamp(1, 100);
         let ui = 101u8.saturating_sub(q);
         let effort = ((ui as f32 / 100.0) * 10.0).round().clamp(1.0, 10.0) as i32;
-        let suffix = format!(
-            "{}[effort={},dither=1.0]",
-            output_str(output)?,
-            effort,
-        );
+        let suffix = format!("{}[effort={},dither=1.0]", output_str(output)?, effort,);
 
-        println!("[compression] GIF save params: {}", suffix);
+        info!("[compression] GIF save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] GIF {} → {} bytes (effort={})", input.display(), size, effort);
+        info!(
+            "[compression] GIF {} → {} bytes (effort={})",
+            input.display(),
+            size,
+            effort
+        );
         Ok(size)
     }
 
     pub fn compress_jxl(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
         let q = quality.clamp(1, 100);
-        let suffix = format!(
-            "{}[Q={},effort=7,strip=true]",
-            output_str(output)?,
-            q,
-        );
+        let suffix = format!("{}[Q={},effort=7,strip=true]", output_str(output)?, q,);
 
-        println!("[compression] JXL save params: {}", suffix);
+        info!("[compression] JXL save params: {}", suffix);
         let img = self.load_image(input)?;
         let res = self.save_image(img, &suffix);
         self.unref(img);
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!("[compression] JXL {} → {} bytes (q={})", input.display(), size, q);
+        info!(
+            "[compression] JXL {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
         Ok(size)
     }
 }
@@ -393,9 +419,7 @@ unsafe impl Sync for Vips {}
 impl Drop for Vips {
     fn drop(&mut self) {
         unsafe {
-            if let Ok(shutdown) =
-                self._lib.get::<unsafe extern "C" fn()>(b"vips_shutdown\0")
-            {
+            if let Ok(shutdown) = self._lib.get::<unsafe extern "C" fn()>(b"vips_shutdown\0") {
                 shutdown();
             }
         }

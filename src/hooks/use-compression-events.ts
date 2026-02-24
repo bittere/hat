@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toastManager } from "@/components/ui/toast";
-import type { CompressionRecord, CompressionRetry } from "@/lib/types";
+import type { CompressionRecord, CompressionRetry, CompressionStarted, CompressionFailed } from "@/lib/types";
 import { formatBytes, extractFileName } from "@/lib/format";
 
 export function useCompressionEvents() {
@@ -15,15 +15,75 @@ export function useCompressionEvents() {
   }, []);
 
   useEffect(() => {
-    invoke<CompressionRecord[]>("get_compression_history").then(setHistory);
+    invoke<CompressionRecord[]>("get_compression_history").then(records => {
+      setHistory(records.map(r => ({ ...r, status: "completed" })));
+    });
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<CompressionRecord>("compression-complete", (event) => {
-      setHistory((prev) => [...prev, event.payload]);
+    const unlistenStarted = listen<CompressionStarted>("compression-started", (event) => {
+      const { initial_path, timestamp } = event.payload;
+      setHistory((prev) => {
+        // Prevent double entries
+        if (prev.some(r => r.timestamp === timestamp)) return prev;
+
+        const newRecord: CompressionRecord = {
+          initial_path,
+          final_path: "",
+          initial_size: 0,
+          compressed_size: 0,
+          initial_format: "",
+          final_format: "",
+          quality: 0,
+          timestamp,
+          original_deleted: false,
+          status: "processing"
+        };
+        return [...prev, newRecord];
+      });
     });
+
+    const unlistenComplete = listen<CompressionRecord>("compression-complete", (event) => {
+      setHistory((prev) => {
+        const index = prev.findIndex(r => r.timestamp === event.payload.timestamp);
+        if (index > -1) {
+          const newHistory = [...prev];
+          newHistory[index] = { ...event.payload, status: "completed" };
+          return newHistory;
+        }
+        return [...prev, { ...event.payload, status: "completed" }];
+      });
+    });
+
+    const unlistenFailed = listen<CompressionFailed>("compression-failed", (event) => {
+      setHistory((prev) => {
+        const index = prev.findIndex(r => r.timestamp === event.payload.timestamp);
+        if (index > -1) {
+          const newHistory = [...prev];
+          newHistory[index] = { ...newHistory[index], status: "failed" };
+          return newHistory;
+        }
+        // If not found, add it as failed
+        const newRecord: CompressionRecord = {
+          initial_path: event.payload.initial_path,
+          final_path: "",
+          initial_size: 0,
+          compressed_size: 0,
+          initial_format: "",
+          final_format: "",
+          quality: 0,
+          timestamp: event.payload.timestamp,
+          original_deleted: false,
+          status: "failed"
+        };
+        return [...prev, newRecord];
+      });
+    });
+
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenStarted.then((fn) => fn());
+      unlistenComplete.then((fn) => fn());
+      unlistenFailed.then((fn) => fn());
     };
   }, []);
 
