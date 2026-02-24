@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
-import { Tuning2Linear } from "@solar-icons/react-perf";
-import { FolderPlus, Trash2, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Tuning2Linear, AltArrowDownLinear, AddFolderLinear } from "@solar-icons/react-perf";
+import { FolderPlus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toggle } from "@/components/ui/toggle";
 import { Slider, SliderValue } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,8 @@ import {
   DialogTitle,
   DialogDescription,
   DialogPanel,
+  DialogFooter,
+  DialogClose,
 } from "@/components/ui/dialog";
 import {
   Autocomplete,
@@ -28,19 +31,31 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
+import { Checkbox } from "@/components/ui/checkbox";
+import { CheckboxGroup } from "@/components/ui/checkbox-group";
 import { Spinner } from "@/components/ui/spinner";
 
 interface SettingsDialogProps {
   quality: number;
   onQualityChange: (value: number) => void;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps) {
+export function SettingsDialog({ quality, onQualityChange, onOpenChange }: SettingsDialogProps) {
   const [searchValue, setSearchValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dialogOpenRef = useRef(false);
+
+  const handleOpenChange = useCallback((open: boolean) => {
+    dialogOpenRef.current = open;
+    if (!open) setIsDragOver(false);
+    onOpenChange?.(open);
+  }, [onOpenChange]);
 
   useEffect(() => {
     invoke<string[]>("get_watched_folders").then(setWatchedFolders);
@@ -73,17 +88,12 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
     };
   }, [searchValue, performSearch]);
 
-  const addFolder = async (path: string) => {
+  const addFolder = useCallback(async (path: string) => {
     if (!path) return;
     try {
       const folders = await invoke<string[]>("add_watched_folder", { path });
       setWatchedFolders(folders);
       setSearchValue("");
-      toastManager.add({
-        title: "Folder added",
-        description: `Now watching ${path}`,
-        type: "info",
-      });
     } catch (err) {
       console.error("Failed to add folder", err);
       toastManager.add({
@@ -92,12 +102,46 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
         type: "error",
       });
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    let unlistenEnter: () => void;
+    let unlistenLeave: () => void;
+    let unlistenDrop: () => void;
+
+    const setup = async () => {
+      unlistenEnter = await appWindow.listen("tauri://drag-enter", () => {
+        if (dialogOpenRef.current) setIsDragOver(true);
+      });
+      unlistenLeave = await appWindow.listen("tauri://drag-leave", () => {
+        setIsDragOver(false);
+      });
+      unlistenDrop = await appWindow.listen<{ paths: string[] }>(
+        "tauri://drag-drop",
+        (event) => {
+          if (!dialogOpenRef.current) return;
+          setIsDragOver(false);
+          for (const path of event.payload.paths) {
+            addFolder(path);
+          }
+        }
+      );
+    };
+
+    setup();
+    return () => {
+      if (unlistenEnter) unlistenEnter();
+      if (unlistenLeave) unlistenLeave();
+      if (unlistenDrop) unlistenDrop();
+    };
+  }, [addFolder]);
 
   const removeFolder = async (path: string) => {
     try {
       const folders = await invoke<string[]>("remove_watched_folder", { path });
       setWatchedFolders(folders);
+      setSelectedFolders((prev) => prev.filter((f) => f !== path));
     } catch (err) {
       console.error("Failed to remove folder", err);
       toastManager.add({
@@ -108,8 +152,28 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
     }
   };
 
+  const removeSelectedFolders = async () => {
+    for (const folder of selectedFolders) {
+      await removeFolder(folder);
+    }
+    setSelectedFolders([]);
+  };
+
+  const allSelected = watchedFolders.length > 0 && selectedFolders.length === watchedFolders.length;
+  const someSelected = selectedFolders.length > 0 && !allSelected;
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedFolders(checked ? [...watchedFolders] : []);
+  };
+
+  const toggleFolder = (folder: string, checked: boolean) => {
+    setSelectedFolders((prev) =>
+      checked ? [...prev, folder] : prev.filter((f) => f !== folder)
+    );
+  };
+
   return (
-    <Dialog>
+    <Dialog onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
           <Toggle pressed={false} variant="outline" size="sm" aria-label="Settings" />
@@ -146,18 +210,18 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
                     filter={null}
                     items={searchResults}
                     onValueChange={(val) => {
-                       if (typeof val === 'string') {
-                         setSearchValue(val);
-                       }
+                      if (typeof val === 'string') {
+                        setSearchValue(val);
+                      }
                     }}
                     onSelectionChange={(val) => {
-                       if (val) addFolder(val as string);
+                      if (val) addFolder(val as string);
                     }}
                     value={searchValue}
                   >
                     <AutocompleteInput
                       placeholder="Search or paste folder path..."
-                      className="font-mono text-xs"
+                      className="text-xs"
                       onFocus={() => {
                         setIsFocused(true);
                         performSearch(searchValue);
@@ -177,7 +241,7 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
                         </AutocompleteStatus>
                         <AutocompleteList>
                           {(path: string) => (
-                            <AutocompleteItem key={path} value={path} className="font-mono text-xs">
+                            <AutocompleteItem key={path} value={path} className="text-xs">
                               {path}
                             </AutocompleteItem>
                           )}
@@ -187,6 +251,7 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
                   </Autocomplete>
                 </div>
                 <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => addFolder(searchValue)}
                   disabled={!searchValue}
@@ -196,34 +261,61 @@ export function SettingsDialog({ quality, onQualityChange }: SettingsDialogProps
                 </Button>
               </div>
 
-              <Collapsible defaultOpen={true}>
-                <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+              <div
+                className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors ${isDragOver
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-muted-foreground/25 text-muted-foreground"
+                  }`}
+              >
+                <AddFolderLinear className="size-6" />
+                <p className="text-xs">Drop folders here to watch</p>
+              </div>
+
+              <Collapsible>
+                <CollapsibleTrigger className="flex items-center gap-2 text-sm data-panel-open:[&_svg]:rotate-180 [&_svg]:transition-transform [&_svg]:duration-200">
                   <span>Currently Watching ({watchedFolders.length})</span>
-                  <ChevronDown className="size-4" />
+                  <AltArrowDownLinear className="size-4" />
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="mt-2 space-y-1 max-h-[150px] overflow-y-auto pr-1">
-                    {watchedFolders.map((folder) => (
-                      <div key={folder} className="flex items-center justify-between group rounded-md border bg-muted/30 p-2">
-                        <span className="font-mono text-[10px] truncate flex-1" title={folder}>
-                          {folder}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className="opacity-0 group-hover:opacity-100"
-                          onClick={() => removeFolder(folder)}
-                        >
-                          <Trash2 className="size-3.5 text-destructive" />
-                        </Button>
-                      </div>
-                    ))}
+                  <div className="mt-2 max-h-[150px] overflow-y-auto pr-1 select-none">
+                    <CheckboxGroup value={selectedFolders} className="gap-2">
+                      <label className="flex items-center gap-2 pb-2">
+                        <Checkbox
+                          checked={allSelected}
+                          indeterminate={someSelected}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                        <span className="text-xs font-medium">Select All</span>
+                      </label>
+                      {watchedFolders.map((folder) => (
+                        <label key={folder} className="flex items-center gap-2" title={folder}>
+                          <Checkbox
+                            checked={selectedFolders.includes(folder)}
+                            onCheckedChange={(checked) => toggleFolder(folder, checked as boolean)}
+                          />
+                          <span className="text-sm truncate">{folder}</span>
+                        </label>
+                      ))}
+                    </CheckboxGroup>
                   </div>
+                  <Button
+                    variant="destructive"
+                    size="xs"
+                    disabled={selectedFolders.length === 0}
+                    onClick={removeSelectedFolders}
+                    className="mt-2"
+                  >
+                    Delete Selected ({selectedFolders.length})
+                  </Button>
                 </CollapsibleContent>
               </Collapsible>
             </div>
           </div>
         </DialogPanel>
+        <DialogFooter>
+          <DialogClose render={<Button variant="destructive-outline">Cancel</Button>} />
+          <DialogClose render={<Button>Save</Button>} />
+        </DialogFooter>
       </DialogPopup>
     </Dialog>
   );

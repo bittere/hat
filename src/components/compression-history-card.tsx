@@ -1,7 +1,7 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardPanel, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { CompressionRecord } from "@/lib/types";
-import { formatBytes, extractFileName } from "@/lib/format";
+import { formatBytes, extractFileName, extractDirectory } from "@/lib/format";
 
 interface CompressionHistoryCardProps {
   record: CompressionRecord;
@@ -11,6 +11,7 @@ interface CompressionHistoryCardProps {
 
 export function CompressionHistoryCard({ record, cannotRecompress, onRecompress }: CompressionHistoryCardProps) {
   const fileName = extractFileName(record.initial_path);
+  const directory = extractDirectory(record.initial_path);
   const saved = record.initial_size - record.compressed_size;
   const pct = record.initial_size > 0 ? ((saved / record.initial_size) * 100).toFixed(1) : "0";
   const time = new Date(record.timestamp * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -18,9 +19,12 @@ export function CompressionHistoryCard({ record, cannotRecompress, onRecompress 
   return (
     <Card className={`rounded-xl${cannotRecompress ? " opacity-50" : ""}`}>
       <CardHeader className="p-3 pb-1">
-        <CardTitle className="text-sm font-medium truncate" title={fileName}>
+        <CardTitle className="text-sm font-medium truncate" title={record.initial_path}>
           {fileName}
         </CardTitle>
+        <CardDescription className="text-[10px] truncate opacity-70 mb-0.5" title={directory}>
+          {directory}
+        </CardDescription>
         <CardDescription className="text-xs">
           {record.initial_format.toUpperCase()} → {record.final_format.toUpperCase()} · Level {record.quality} · {time}
         </CardDescription>

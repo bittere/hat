@@ -9,3 +9,9 @@ export function formatBytes(bytes: number): string {
 export function extractFileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
+
+export function extractDirectory(path: string): string {
+  const parts = path.split(/[\\/]/);
+  parts.pop();
+  return parts.join("/") || "/";
+}

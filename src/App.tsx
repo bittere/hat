@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { addDays, format } from "date-fns";
 import type { DateRange } from "react-day-picker";
@@ -10,11 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
 import { toastManager } from "@/components/ui/toast";
+import { DragOverlay } from "@/components/drag-overlay";
 import { useDownloadsWatcher } from "@/hooks/use-downloads-watcher";
 import { useCompressionEvents } from "@/hooks/use-compression-events";
 import { StatisticsCard } from "@/components/statistics-card";
 import { CompressionHistoryCard } from "@/components/compression-history-card";
-import { BillCrossLinear, CalendarAddLinear } from "@solar-icons/react-perf";
+import { BillCrossLinear, CalendarAddLinear, FileSendLinear } from "@solar-icons/react-perf";
 import { extractFileName } from "@/lib/format";
 import "./App.css";
 
@@ -31,6 +32,7 @@ function App() {
   } = useCompressionEvents();
 
   const [isHovering, setIsHovering] = useState(false);
+  const settingsOpen = useRef(false);
   const [search, setSearch] = useState("");
   const [filterDate, setFilterDate] = useState<DateRange | undefined>();
   const [filterMonth, setFilterMonth] = useState(new Date());
@@ -39,7 +41,7 @@ function App() {
   const filteredHistory = useMemo(() => {
     const query = search.toLowerCase();
     return history.filter((record) => {
-      if (query && !extractFileName(record.initial_path).toLowerCase().includes(query)) {
+      if (query && !record.initial_path.toLowerCase().includes(query)) {
         return false;
       }
       if (filterDate?.from) {
@@ -66,7 +68,7 @@ function App() {
       const window = getCurrentWindow();
 
       unlistenDragEnter = await window.listen("tauri://drag-enter", () => {
-        setIsHovering(true);
+        if (!settingsOpen.current) setIsHovering(true);
       });
 
       unlistenDragLeave = await window.listen("tauri://drag-leave", () => {
@@ -75,6 +77,7 @@ function App() {
 
       unlistenDrop = await window.listen<{ paths: string[] }>("tauri://drag-drop", (event) => {
         setIsHovering(false);
+        if (settingsOpen.current) return;
         const paths = event.payload.paths;
         if (paths.length > 0) {
           handleManualCompress(paths);
@@ -105,12 +108,11 @@ function App() {
 
   return (
     <main className="relative">
+      <DragOverlay />
       {isHovering && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none border-4 border-dashed border-primary m-2 rounded-2xl animate-in fade-in zoom-in duration-200">
-          <div className="text-center">
-            <p className="text-2xl font-bold">Drop to Compress</p>
-            <p className="text-muted-foreground">Release to start processing</p>
-          </div>
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-primary/5 backdrop-blur-sm pointer-events-none border-4 border-dashed border-primary m-2 rounded-2xl animate-in fade-in zoom-in duration-200 text-primary">
+          <FileSendLinear className="size-12" />
+          <p className="text-xs font-medium">Drop images here to compress</p>
         </div>
       )}
       <header className="flex w-full items-center justify-between px-4 py-3 border-b border-border">
@@ -119,7 +121,7 @@ function App() {
           Hat
         </h1>
         <div className="flex items-center gap-1">
-          <SettingsDialog quality={quality} onQualityChange={handleQualityChange} />
+          <SettingsDialog quality={quality} onQualityChange={handleQualityChange} onOpenChange={(open) => { settingsOpen.current = open; }} />
           <ThemeToggle />
         </div>
       </header>
@@ -219,16 +221,23 @@ function App() {
                 </div>
               </PopoverPopup>
             </Popover>
-            {filterDate?.from && (
-              <Button variant="destructive" size="sm" className="shrink-0 text-xs" onClick={() => setFilterDate(undefined)}>
-                Clear
-              </Button>
-            )}
+            <Button
+              variant="destructive"
+              size="sm"
+              className="shrink-0 text-xs"
+              disabled={!(filterDate?.from || search)}
+              onClick={() => {
+                setFilterDate(undefined);
+                setSearch("");
+              }}
+            >
+              Clear
+            </Button>
           </div>
           {history.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-muted rounded-2xl gap-2 p-8 text-center text-muted-foreground">
-              <p className="text-sm">No compressions yet.</p>
-              <p className="text-xs max-w-[200px]">Download an image or drop one here to get started.</p>
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-muted-foreground/25 px-6 py-12 text-center transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary group text-muted-foreground">
+              <FileSendLinear className="size-12 transition-colors group-hover:text-primary" />
+              <p className="text-xs font-medium transition-colors group-hover:text-primary">Drop images here to compress</p>
             </div>
           ) : filteredHistory.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
