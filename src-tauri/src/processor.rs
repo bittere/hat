@@ -15,6 +15,19 @@ struct CompressionRetry {
     compressed_size: u64,
 }
 
+#[derive(Clone, serde::Serialize)]
+pub struct CompressionStarted {
+    pub initial_path: String,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct CompressionFailed {
+    pub initial_path: String,
+    pub timestamp: u64,
+    pub error: String,
+}
+
 pub fn process_file(
     app: &tauri::AppHandle,
     vips: &Arc<Vips>,
@@ -38,6 +51,20 @@ pub fn process_file(
         .lock()
         .map(|c| c.config.quality)
         .unwrap_or(crate::DEFAULT_QUALITY);
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Notify frontend that we're starting
+    let _ = app.emit(
+        "compression-started",
+        &CompressionStarted {
+            initial_path: path.display().to_string(),
+            timestamp,
+        },
+    );
 
     let mut current_quality = original_quality;
     let mut compressed_size = 0u64;
@@ -79,7 +106,16 @@ pub fn process_file(
                 }
             }
             Err(e) => {
-                return Err(format!("Failed to compress {}: {e}", path.display()));
+                let err_msg = format!("Failed to compress {}: {e}", path.display());
+                let _ = app.emit(
+                    "compression-failed",
+                    &CompressionFailed {
+                        initial_path: path.display().to_string(),
+                        timestamp,
+                        error: err_msg.clone(),
+                    },
+                );
+                return Err(err_msg);
             }
         }
     }
@@ -93,10 +129,7 @@ pub fn process_file(
             initial_format: format.to_string(),
             final_format: format.to_string(),
             quality: current_quality,
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+            timestamp,
             original_deleted: false,
         };
 
@@ -139,7 +172,16 @@ pub fn process_file(
 
         Ok(record)
     } else {
-        Err("Failed to compress file after retries".to_string())
+        let err_msg = "Failed to compress file after retries".to_string();
+        let _ = app.emit(
+            "compression-failed",
+            &CompressionFailed {
+                initial_path: path.display().to_string(),
+                timestamp,
+                error: err_msg.clone(),
+            },
+        );
+        Err(err_msg)
     }
 }
 

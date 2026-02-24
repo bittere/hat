@@ -8,6 +8,18 @@ export interface CompressionRecord {
   quality: number;
   timestamp: number;
   original_deleted: boolean;
+  status?: "processing" | "completed" | "failed";
+}
+
+export interface CompressionStarted {
+  initial_path: string;
+  timestamp: number;
+}
+
+export interface CompressionFailed {
+  initial_path: string;
+  timestamp: number;
+  error: string;
 }
 
 export interface CompressionRetry {

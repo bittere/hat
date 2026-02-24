@@ -127,10 +127,36 @@ pub fn recompress(
         .map(|m| m.len())
         .map_err(|e| e.to_string())?;
 
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Notify frontend that we're starting
+    let _ = app.emit(
+        "compression-started",
+        &crate::processor::CompressionStarted {
+            initial_path: path.clone(),
+            timestamp,
+        },
+    );
+
     let quality: u8 = previous_quality.saturating_add(10).min(100);
-    let compressed_size = vips
-        .compress(input, &output, quality)
-        .map_err(|e| e.to_string())?;
+    let compressed_size = match vips.compress(input, &output, quality) {
+        Ok(s) => s,
+        Err(e) => {
+            let err_msg = e.to_string();
+            let _ = app.emit(
+                "compression-failed",
+                &crate::processor::CompressionFailed {
+                    initial_path: path.clone(),
+                    timestamp,
+                    error: err_msg.clone(),
+                },
+            );
+            return Err(err_msg);
+        }
+    };
 
     let record = CompressionRecord {
         initial_path: path.clone(),
@@ -140,10 +166,7 @@ pub fn recompress(
         initial_format: format.to_string(),
         final_format: format.to_string(),
         quality,
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        timestamp,
         original_deleted: false,
     };
 

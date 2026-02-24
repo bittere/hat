@@ -7,9 +7,10 @@ interface StatisticsCardProps {
 }
 
 export function StatisticsCard({ history }: StatisticsCardProps) {
-  const totalSaved = history.reduce((sum, r) => sum + Math.max(0, r.initial_size - r.compressed_size), 0);
-  const totalOriginal = history.reduce((sum, r) => sum + r.initial_size, 0);
-  const avgReduction = history.length > 0 ? ((totalSaved / totalOriginal) * 100).toFixed(1) : "0";
+  const completedHistory = history.filter(r => r.status !== "processing");
+  const totalSaved = completedHistory.reduce((sum, r) => sum + Math.max(0, r.initial_size - r.compressed_size), 0);
+  const totalOriginal = completedHistory.reduce((sum, r) => sum + r.initial_size, 0);
+  const avgReduction = completedHistory.length > 0 ? ((totalSaved / totalOriginal) * 100).toFixed(1) : "0";
 
   return (
     <Card className="mt-1">
@@ -20,7 +21,7 @@ export function StatisticsCard({ history }: StatisticsCardProps) {
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div>
             <p className="text-muted-foreground font-medium">Files Processed</p>
-            <p className="font-semibold tabular-nums text-sm">{history.length}</p>
+            <p className="font-semibold tabular-nums text-sm">{completedHistory.length}</p>
           </div>
           <div>
             <p className="text-muted-foreground font-medium">Total Saved</p>
