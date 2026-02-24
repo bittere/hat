@@ -7,6 +7,7 @@ pub struct AppConfig {
     pub watched_folders: Vec<String>,
     pub quality: u8,
     pub show_background_notification: bool,
+    pub show_system_notifications: bool,
 }
 
 impl Default for AppConfig {
@@ -19,6 +20,7 @@ impl Default for AppConfig {
             watched_folders,
             quality: crate::DEFAULT_QUALITY,
             show_background_notification: true,
+            show_system_notifications: true,
         }
     }
 }
@@ -73,6 +75,11 @@ impl ConfigManager {
 
     pub fn set_show_background_notification(&mut self, show: bool) {
         self.config.show_background_notification = show;
+        let _ = self.save();
+    }
+
+    pub fn set_show_system_notifications(&mut self, show: bool) {
+        self.config.show_system_notifications = show;
         let _ = self.save();
     }
 }

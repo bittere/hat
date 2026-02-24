@@ -109,10 +109,47 @@ pub fn process_file(
         // Notify frontend
         let _ = app.emit("compression-complete", &record);
 
+        // System Notification
+        let config = app.state::<Mutex<crate::config::ConfigManager>>();
+        let show_system_notif = if let Ok(c) = config.lock() {
+            c.config.show_system_notifications
+        } else {
+            true
+        };
+
+        if show_system_notif {
+            use tauri_plugin_notification::NotificationExt;
+            let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("image");
+
+            let _ = app
+                .notification()
+                .builder()
+                .title("Image Compressed")
+                .body(format!(
+                    "{} compressed to {} (saved {}%)",
+                    file_name,
+                    format_bytes(record.compressed_size),
+                    ((record.initial_size - record.compressed_size) as f64
+                        / record.initial_size as f64
+                        * 100.0)
+                        .round()
+                ))
+                .show();
+        }
+
         Ok(record)
     } else {
         Err("Failed to compress file after retries".to_string())
     }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    let kb = bytes as f64 / 1024.0;
+    if kb < 1024.0 {
+        return format!("{:.1} KB", kb);
+    }
+    let mb = kb / 1024.0;
+    format!("{:.1} MB", mb)
 }
 
 fn wait_for_file_stability(path: &Path) -> Result<(), String> {

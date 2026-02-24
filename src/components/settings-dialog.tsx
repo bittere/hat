@@ -66,6 +66,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showBackgroundNotification, setShowBackgroundNotification] = useState(true);
+  const [showSystemNotifications, setShowSystemNotifications] = useState(true);
   const dialogOpenRef = useRef(false);
   const { theme, setTheme } = useTheme();
 
@@ -78,6 +79,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
   useEffect(() => {
     invoke<string[]>("get_watched_folders").then(setWatchedFolders);
     invoke<boolean>("get_show_background_notification").then(setShowBackgroundNotification);
+    invoke<boolean>("get_show_system_notifications").then(setShowSystemNotifications);
   }, []);
 
   const performSearch = useCallback(async (query: string) => {
@@ -221,6 +223,15 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
       setShowBackgroundNotification(checked);
     } catch (err) {
       console.error("Failed to update notification setting", err);
+    }
+  };
+
+  const handleToggleSystemNotifications = async (checked: boolean) => {
+    try {
+      await invoke("set_show_system_notifications", { value: checked });
+      setShowSystemNotifications(checked);
+    } catch (err) {
+      console.error("Failed to update system notification setting", err);
     }
   };
 
@@ -417,12 +428,18 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
                   title="Background Operation Alert"
                   description="Show a notification when Hat continues to run in the background after closing the window."
                 />
+                <SettingsCheckbox
+                  checked={showSystemNotifications}
+                  onCheckedChange={handleToggleSystemNotifications}
+                  title="System Notifications"
+                  description="Show a system notification when an image is successfully compressed."
+                />
               </div>
             </TabsPanel>
           </Tabs>
         </DialogPanel>
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" size="sm" className="w-full">Close</Button>} />
+          <DialogClose render={<Button variant="ghost" size="sm">Close</Button>} />
         </DialogFooter>
       </DialogPopup>
     </Dialog>

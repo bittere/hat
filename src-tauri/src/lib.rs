@@ -37,6 +37,8 @@ pub fn run() {
             commands::search_directories,
             commands::get_show_background_notification,
             commands::set_show_background_notification,
+            commands::get_show_system_notifications,
+            commands::set_show_system_notifications,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();

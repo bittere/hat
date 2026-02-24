@@ -48,6 +48,24 @@ pub fn set_show_background_notification(
 }
 
 #[tauri::command]
+pub fn get_show_system_notifications(
+    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
+) -> Result<bool, String> {
+    let config_manager = config.lock().map_err(|e| e.to_string())?;
+    Ok(config_manager.config.show_system_notifications)
+}
+
+#[tauri::command]
+pub fn set_show_system_notifications(
+    value: bool,
+    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
+) -> Result<bool, String> {
+    let mut config_manager = config.lock().map_err(|e| e.to_string())?;
+    config_manager.set_show_system_notifications(value);
+    Ok(value)
+}
+
+#[tauri::command]
 pub fn get_compression_history(
     log: tauri::State<'_, Mutex<crate::log::CompressionLog>>,
 ) -> Vec<CompressionRecord> {
