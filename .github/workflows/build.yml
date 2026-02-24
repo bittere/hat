@@ -24,7 +24,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 1. FAIL-FAST JOB: Runs in seconds, prevents wasting minutes on bad code
   lint:
     name: Lint & Format Checks
     runs-on: ubuntu-latest
@@ -38,7 +37,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
-          
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      
       - name: Check formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - name: Run clippy
