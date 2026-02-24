@@ -73,7 +73,6 @@ function App() {
         </div>
       </header>
       <div className="flex gap-4 p-4 flex-1 min-h-0">
-        {/* Left column – Settings & Statistics */}
         <div className="flex flex-col gap-3 w-80 shrink-0">
           <StatisticsCard history={history} />
 
