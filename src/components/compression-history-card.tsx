@@ -2,6 +2,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardPanel, CardFooter } f
 import { Button } from "@/components/ui/button";
 import type { CompressionRecord } from "@/lib/types";
 import { formatBytes, extractFileName, extractDirectory } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface CompressionHistoryCardProps {
   record: CompressionRecord;
@@ -17,41 +18,37 @@ export function CompressionHistoryCard({ record, cannotRecompress, onRecompress 
   const time = new Date(record.timestamp * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
   return (
-    <Card className={`rounded-xl${cannotRecompress ? " opacity-50" : ""}`}>
-      <CardHeader className="p-3 pb-1">
-        <CardTitle className="text-sm font-medium truncate" title={record.initial_path}>
+    <Card className={cn(
+      "group transition-all",
+      cannotRecompress && "opacity-60 grayscale-[0.5]"
+    )}>
+      <CardHeader>
+        <CardTitle className="truncate" title={record.initial_path}>
           {fileName}
         </CardTitle>
-        <CardDescription className="text-[10px] truncate opacity-70 mb-0.5" title={directory}>
-          {directory}
-        </CardDescription>
-        <CardDescription className="text-xs">
-          {record.initial_format.toUpperCase()} → {record.final_format.toUpperCase()} · Level {record.quality} · {time}
+        <CardDescription className="truncate" title={directory}>
+          {record.initial_format} → {record.final_format} • {record.quality}% • {time}
         </CardDescription>
       </CardHeader>
-      <CardPanel className="px-3 pb-1 pt-0">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <CardPanel>
+        <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
           <span>
             {formatBytes(record.initial_size)} → {formatBytes(record.compressed_size)}
           </span>
-          <span className={saved > 0 ? "text-success-foreground font-medium" : ""}>
-            {saved > 0
-              ? `−${pct}%`
-              : saved === 0
-                ? "No change"
-                : `+${Math.abs(Number(pct))}%`}
+          <span className={saved > 0 ? "text-primary font-bold" : ""}>
+            {saved >= 0 ? `−${pct}%` : `+${Math.abs(Number(pct))}%`}
           </span>
         </div>
       </CardPanel>
-      <CardFooter className="px-3 pb-3 pt-1">
+      <CardFooter>
         <Button
           variant="outline"
           size="xs"
-          className="w-full"
+          className="w-full h-7 text-[10px] font-medium"
           onClick={() => onRecompress(record.initial_path, record.quality, record.timestamp)}
           disabled={cannotRecompress}
         >
-          Recompress Harder
+          Recompress
         </Button>
       </CardFooter>
     </Card>

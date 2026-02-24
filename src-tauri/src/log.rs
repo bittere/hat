@@ -1,6 +1,6 @@
 use crate::compression::CompressionRecord;
+use log::error;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 pub struct CompressionLog {
     pub records: Vec<CompressionRecord>,
@@ -18,33 +18,27 @@ impl CompressionLog {
 
     pub fn append(&mut self, record: CompressionRecord) {
         self.records.push(record);
-        self.save();
+        let _ = self.save();
     }
 
     pub fn clear(&mut self) {
         self.records.clear();
-        self.save();
+        let _ = self.save();
     }
 
-    pub fn save(&self) {
+    pub fn save(&self) -> Result<(), String> {
         if let Some(parent) = self.path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) { eprintln!("Failed to create log directory: {}", e); }
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                error!("Failed to create log directory: {}", e);
+                return Err(format!("Failed to create log directory: {}", e));
+            }
         }
         if let Ok(json) = serde_json::to_string_pretty(&self.records) {
-            if let Err(e) = std::fs::write(&self.path, json) { eprintln!("Failed to save log: {}", e); }
+            if let Err(e) = std::fs::write(&self.path, json) {
+                error!("Failed to save log: {}", e);
+                return Err(format!("Failed to save log: {}", e));
+            }
         }
+        Ok(())
     }
-}
-
-pub static COMPRESSION_LOG: std::sync::OnceLock<Mutex<CompressionLog>> = std::sync::OnceLock::new();
-
-pub fn init_compression_log(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    let log_path = app
-        .path()
-        .app_data_dir()
-        .expect("failed to resolve app data dir")
-        .join("compression_log.json");
-    let log = CompressionLog::load(log_path);
-    let _ = COMPRESSION_LOG.set(Mutex::new(log));
 }

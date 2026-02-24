@@ -1,9 +1,16 @@
-export function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number, decimals = 1): string {
   if (bytes === 0) return "0 B";
+  if (bytes < 0) return "-" + formatBytes(Math.abs(bytes), decimals);
+
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+
+  return (
+    parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i]
+  );
 }
 
 export function extractFileName(path: string): string {

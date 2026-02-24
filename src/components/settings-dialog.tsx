@@ -112,7 +112,9 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
 
     const setup = async () => {
       unlistenEnter = await appWindow.listen("tauri://drag-enter", () => {
-        if (dialogOpenRef.current) setIsDragOver(true);
+        if (dialogOpenRef.current) {
+          setIsDragOver(true);
+        }
       });
       unlistenLeave = await appWindow.listen("tauri://drag-leave", () => {
         setIsDragOver(false);
@@ -122,6 +124,9 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
         (event) => {
           if (!dialogOpenRef.current) return;
           setIsDragOver(false);
+
+          // Filter out files, only add folders (or files if they are actually images)
+          // The backend add_watched_folder handles the directory check.
           for (const path of event.payload.paths) {
             addFolder(path);
           }
@@ -192,7 +197,13 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
               min={1}
               max={100}
               value={quality}
-              onValueChange={onQualityChange}
+              onValueChange={(val) => {
+                if (typeof val === "number") {
+                  onQualityChange(val);
+                } else if (Array.isArray(val) && typeof val[0] === "number") {
+                  onQualityChange(val[0]);
+                }
+              }}
               className="space-y-2"
             >
               <div className="flex items-center justify-between">
@@ -207,15 +218,12 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
               <div className="flex gap-2">
                 <div className="flex-1">
                   <Autocomplete
-                    filter={null}
                     items={searchResults}
                     onValueChange={(val) => {
-                      if (typeof val === 'string') {
+                      if (val) {
                         setSearchValue(val);
+                        addFolder(val);
                       }
-                    }}
-                    onSelectionChange={(val) => {
-                      if (val) addFolder(val as string);
                     }}
                     value={searchValue}
                   >
@@ -263,8 +271,8 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
 
               <div
                 className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors ${isDragOver
-                    ? "border-primary bg-primary/5 text-primary"
-                    : "border-muted-foreground/25 text-muted-foreground"
+                  ? "border-primary bg-primary/5 text-primary"
+                  : "border-muted-foreground/25 text-muted-foreground"
                   }`}
               >
                 <AddFolderLinear className="size-6" />
@@ -313,8 +321,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
           </div>
         </DialogPanel>
         <DialogFooter>
-          <DialogClose render={<Button variant="destructive-outline">Cancel</Button>} />
-          <DialogClose render={<Button>Save</Button>} />
+          <DialogClose render={<Button variant="ghost" size="sm" className="w-full">Close</Button>} />
         </DialogFooter>
       </DialogPopup>
     </Dialog>

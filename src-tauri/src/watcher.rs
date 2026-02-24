@@ -1,5 +1,6 @@
 use crate::compression::{ImageFormat, Vips};
 use crate::platform::get_lib_path;
+use log::{error, info};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -10,7 +11,9 @@ struct NewFile {
     path: String,
 }
 
-pub struct VipsState(pub Option<Arc<Vips>>);
+pub struct VipsState {
+    pub vips: Option<Arc<Vips>>,
+}
 
 pub struct WatcherHandle {
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
@@ -20,16 +23,16 @@ pub fn init_watcher(app: &tauri::AppHandle) {
     let lib_path = get_lib_path(app);
     let vips = match unsafe { Vips::new(&lib_path) } {
         Ok(v) => {
-            println!("[compression] libvips loaded from {}", lib_path.display());
+            info!("[compression] libvips loaded from {}", lib_path.display());
             Some(Arc::new(v))
         }
         Err(e) => {
-            eprintln!("[compression] Failed to load libvips, auto-compression disabled: {e}");
+            error!("[compression] Failed to load libvips, auto-compression disabled: {e}");
             None
         }
     };
 
-    app.manage(VipsState(vips.clone()));
+    app.manage(VipsState { vips: vips.clone() });
 
     let handle = app.clone();
     let watcher_res = notify::recommended_watcher(move |res: Result<Event, _>| {
@@ -48,12 +51,8 @@ pub fn init_watcher(app: &tauri::AppHandle) {
                     // Skip temporary/incomplete download files
                     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
                         let ext_lower = ext.to_lowercase();
-                        if ext_lower == "tmp" || ext_lower == "crdownload" || ext_lower == "part"
-                        {
-                            println!(
-                                "[watcher] Skipping temporary file: {}",
-                                path.display()
-                            );
+                        if ext_lower == "tmp" || ext_lower == "crdownload" || ext_lower == "part" {
+                            info!("[watcher] Skipping temporary file: {}", path.display());
                             continue;
                         }
                     }
@@ -61,16 +60,13 @@ pub fn init_watcher(app: &tauri::AppHandle) {
                     // Skip files that are already compressed outputs
                     if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
                         if stem.ends_with("_compressed") {
-                            println!(
-                                "[watcher] Skipping compressed file: {}",
-                                path.display()
-                            );
+                            info!("[watcher] Skipping compressed file: {}", path.display());
                             continue;
                         }
                     }
 
                     let format = ImageFormat::from_path(file_path);
-                    println!(
+                    info!(
                         "[watcher] File detected ({:?}): {} [format: {:?}]",
                         event.kind,
                         path.display(),
@@ -82,9 +78,9 @@ pub fn init_watcher(app: &tauri::AppHandle) {
                     };
                     match handle.emit("new-download", &payload) {
                         Ok(_) => {
-                            println!("[watcher] Emitted event for: {}", path.display())
+                            info!("[watcher] Emitted event for: {}", path.display())
                         }
-                        Err(e) => eprintln!("[watcher] Failed to emit event: {e}"),
+                        Err(e) => error!("[watcher] Failed to emit event: {e}"),
                     }
 
                     // Auto-compress if it's a supported image format
@@ -95,7 +91,7 @@ pub fn init_watcher(app: &tauri::AppHandle) {
                             let p = path.to_path_buf();
                             std::thread::spawn(move || {
                                 if let Err(e) = crate::processor::process_file(&h, &v, &p) {
-                                    eprintln!("[watcher] Error: {e}");
+                                    error!("[watcher] Error: {h:?}: {e}");
                                 }
                             });
                         }
@@ -108,13 +104,14 @@ pub fn init_watcher(app: &tauri::AppHandle) {
     let (watcher, initial_folders) = match watcher_res {
         Ok(w) => {
             let folders = {
-                let config_manager = crate::config::CONFIG.get().unwrap().lock().unwrap();
+                let config = app.state::<Mutex<crate::config::ConfigManager>>();
+                let config_manager = config.lock().unwrap();
                 config_manager.config.watched_folders.clone()
             };
             (Some(w), folders)
         }
         Err(e) => {
-            eprintln!("Failed to create file watcher: {e}");
+            error!("Failed to create file watcher: {e}");
             (None, Vec::new())
         }
     };
@@ -125,9 +122,9 @@ pub fn init_watcher(app: &tauri::AppHandle) {
             let path = Path::new(&folder);
             if path.exists() {
                 if let Err(e) = w.watch(path, RecursiveMode::NonRecursive) {
-                    eprintln!("Failed to watch directory {}: {}", folder, e);
+                    error!("Failed to watch directory {}: {}", folder, e);
                 } else {
-                    println!("Watching directory: {}", folder);
+                    info!("Watching directory: {}", folder);
                 }
             }
         }

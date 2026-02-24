@@ -1,22 +1,25 @@
-mod config;
 mod commands;
 mod compression;
+mod config;
 mod log;
 mod platform;
 mod processor;
 mod tray;
 mod watcher;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 
 pub const DEFAULT_QUALITY: u8 = 80;
-pub static QUALITY: AtomicU8 = AtomicU8::new(DEFAULT_QUALITY);
 pub static HAS_NOTIFIED_ON_CLOSE: AtomicBool = AtomicBool::new(false);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
@@ -45,7 +48,8 @@ pub fn run() {
                     api.prevent_close();
 
                     if !HAS_NOTIFIED_ON_CLOSE.load(Ordering::Relaxed) {
-                        let _ = app_handle.notification()
+                        let _ = app_handle
+                            .notification()
                             .builder()
                             .title("Hat")
                             .body("Hat is compressing images as they arrive in the background.")
@@ -55,10 +59,26 @@ pub fn run() {
                 }
             });
 
-            log::init_compression_log(app.handle());
-            config::init_config(app.handle());
-            watcher::init_watcher(app.handle());
             tray::setup_tray(app, icon)?;
+
+            // Initialize Managed State
+            let config_path = app
+                .path()
+                .app_config_dir()
+                .expect("config dir")
+                .join("config.json");
+            let config_manager = crate::config::ConfigManager::load(config_path);
+            app.manage(Mutex::new(config_manager));
+
+            let log_path = app
+                .path()
+                .app_config_dir()
+                .expect("config dir")
+                .join("compression_log.json");
+            let compression_log = crate::log::CompressionLog::load(log_path);
+            app.manage(Mutex::new(compression_log));
+
+            watcher::init_watcher(app.handle());
 
             Ok(())
         })

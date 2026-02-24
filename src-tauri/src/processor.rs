@@ -1,11 +1,9 @@
 use crate::compression::{compressed_output_path, CompressionRecord, ImageFormat, Vips};
-use crate::log::COMPRESSION_LOG;
-use crate::QUALITY;
+use log::{error, info};
 use std::path::Path;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[derive(Clone, serde::Serialize)]
 struct CompressionRetry {
@@ -26,10 +24,21 @@ pub fn process_file(
     let output = compressed_output_path(path).ok_or_else(|| "Invalid output path".to_string())?;
 
     // Wait for the file to be fully written (useful for downloads)
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    if let Err(e) = wait_for_file_stability(path) {
+        error!(
+            "[processor] File stability check failed for {}: {}",
+            path.display(),
+            e
+        );
+    }
 
     let initial_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let original_quality = QUALITY.load(Ordering::Relaxed);
+    let original_quality = app
+        .state::<Mutex<crate::config::ConfigManager>>()
+        .lock()
+        .map(|c| c.config.quality)
+        .unwrap_or(crate::DEFAULT_QUALITY);
+
     let mut current_quality = original_quality;
     let mut compressed_size = 0u64;
     let mut success = false;
@@ -47,7 +56,7 @@ pub fn process_file(
 
                 // Compressed file is larger — notify and retry
                 let retry_quality = (current_quality + QUALITY_STEP).min(100);
-                println!(
+                info!(
                     "[compression] Compressed size ({size}) > original ({initial_size}), retrying with quality {retry_quality} (attempt {})",
                     attempt + 1
                 );
@@ -92,10 +101,9 @@ pub fn process_file(
         };
 
         // Log it
-        if let Some(log) = COMPRESSION_LOG.get() {
-            if let Ok(mut log) = log.lock() {
-                log.append(record.clone());
-            }
+        let log = app.state::<Mutex<crate::log::CompressionLog>>();
+        if let Ok(mut log) = log.lock() {
+            log.append(record.clone());
         }
 
         // Notify frontend
@@ -104,5 +112,35 @@ pub fn process_file(
         Ok(record)
     } else {
         Err("Failed to compress file after retries".to_string())
+    }
+}
+
+fn wait_for_file_stability(path: &Path) -> Result<(), String> {
+    let mut last_size = 0;
+    let mut stable_count = 0;
+    const POLLING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+    const STABLE_THRESHOLD: u32 = 3; // Must be stable for 300ms
+    const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < MAX_WAIT {
+        let current_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        if current_size > 0 && current_size == last_size {
+            stable_count += 1;
+            if stable_count >= STABLE_THRESHOLD {
+                return Ok(());
+            }
+        } else {
+            last_size = current_size;
+            stable_count = 0;
+        }
+        std::thread::sleep(POLLING_INTERVAL);
+    }
+
+    if last_size > 0 {
+        Ok(()) // We waited long enough, try anyway
+    } else {
+        Err("File never appeared or remained empty".to_string())
     }
 }
