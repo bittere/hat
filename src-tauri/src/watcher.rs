@@ -2,8 +2,10 @@ use crate::compression::{ImageFormat, Vips};
 use crate::platform::get_lib_path;
 use log::{error, info};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, serde::Serialize)]
@@ -35,6 +37,8 @@ pub fn init_watcher(app: &tauri::AppHandle) {
     app.manage(VipsState { vips: vips.clone() });
 
     let handle = app.clone();
+    let recent_files: Arc<Mutex<HashMap<PathBuf, Instant>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let watcher_res = notify::recommended_watcher(move |res: Result<Event, _>| {
         if let Ok(event) = res {
             let dominated = matches!(
@@ -63,6 +67,21 @@ pub fn init_watcher(app: &tauri::AppHandle) {
                             info!("[watcher] Skipping compressed file: {}", path.display());
                             continue;
                         }
+                    }
+
+                    // Deduplicate rapid events for the same file (e.g. Create + Rename)
+                    {
+                        let mut map = recent_files.lock().unwrap();
+                        // Prune entries older than 5s
+                        map.retain(|_, t| t.elapsed().as_secs() < 5);
+                        let canon = file_path.to_path_buf();
+                        if let Some(prev) = map.get(&canon) {
+                            if prev.elapsed().as_secs() < 3 {
+                                info!("[watcher] Skipping duplicate event for: {}", path.display());
+                                continue;
+                            }
+                        }
+                        map.insert(canon, Instant::now());
                     }
 
                     let format = ImageFormat::from_path(file_path);

@@ -24,8 +24,9 @@ export function useCompressionEvents() {
     const unlistenStarted = listen<CompressionStarted>("compression-started", (event) => {
       const { initial_path, timestamp } = event.payload;
       setHistory((prev) => {
-        // Prevent double entries
+        // Prevent double entries (same timestamp OR same path still processing)
         if (prev.some(r => r.timestamp === timestamp)) return prev;
+        if (prev.some(r => r.initial_path === initial_path && r.status === "processing")) return prev;
 
         const newRecord: CompressionRecord = {
           initial_path,
