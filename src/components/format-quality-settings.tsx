@@ -3,20 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { FormatOptions } from "@/lib/types";
 import { FormatQualitySlider } from "@/components/format-quality-slider";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
-import { SettingsCheckbox } from "@/components/ui/settings-checkbox";
-
-type FormatKey = keyof FormatOptions;
-
-const FORMAT_LABELS: { key: FormatKey; label: string }[] = [
-  { key: "jpeg", label: "JPEG" },
-  { key: "png", label: "PNG" },
-  { key: "webp", label: "WebP" },
-  { key: "avif", label: "AVIF" },
-  { key: "heif", label: "HEIF" },
-  { key: "tiff", label: "TIFF" },
-  { key: "gif", label: "GIF" },
-  { key: "jxl", label: "JPEG XL" },
-];
+import { SettingsSwitch } from "@/components/ui/settings-switch";
+import { FormatSelect, FORMAT_LABELS, type FormatKey } from "@/components/format-select";
 
 export function FormatQualitySettings() {
   const [formatOptions, setFormatOptions] = useState<FormatOptions | null>(null);
@@ -52,6 +40,13 @@ export function FormatQualitySettings() {
     }));
   }, [updateOptions]);
 
+  const handleConvertToChange = useCallback((key: FormatKey, value: string | null) => {
+    updateOptions((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], convert_to: value },
+    }));
+  }, [updateOptions]);
+
   if (!formatOptions) return null;
 
   return (
@@ -78,13 +73,22 @@ export function FormatQualitySettings() {
               onValueChange={(val) => handleQualityChange(key, val)}
             />
             {key === "png" && (
-              <SettingsCheckbox
-                checked={formatOptions.png.palette}
+              <SettingsSwitch
+                checked={formatOptions.png.palette && formatOptions.png.convert_to === null}
                 onCheckedChange={handlePaletteChange}
                 title="Palette"
                 description="Reduce to 256 colors for smaller file sizes. Best for graphics and icons."
+                disabled={formatOptions.png.convert_to !== null}
               />
             )}
+            <div className="flex flex-col items-start gap-1.5">
+              <label className="text-sm font-medium text-foreground">Convert to</label>
+              <FormatSelect
+                value={formatOptions[key].convert_to}
+                onValueChange={(val) => handleConvertToChange(key, val)}
+                hideFormat={key}
+              />
+            </div>
           </div>
         </TabsPanel>
       ))}

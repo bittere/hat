@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { FolderWithFilesLinear, FileSendLinear } from "@solar-icons/react-perf";
 
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "tiff"]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff"]);
 
 function getExt(name: string) {
   const dot = name.lastIndexOf(".");

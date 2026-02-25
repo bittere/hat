@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
-import { SettingsCheckbox } from "@/components/ui/settings-checkbox";
+import { SettingsSwitch } from "@/components/ui/settings-switch";
 import { Spinner } from "@/components/ui/spinner";
 import { useTheme } from "@/components/theme-provider";
 
@@ -244,7 +244,7 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
       >
         <Tuning2Linear />
       </DialogTrigger>
-      <DialogPopup className="max-w-2xl h-[28rem]">
+      <DialogPopup className="max-w-2xl h-112">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>Configure compression and appearance.</DialogDescription>
@@ -377,7 +377,7 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
             {/* Appearance Tab */}
             <TabsPanel value="appearance">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-1.5">
                   <label className="text-sm font-medium text-foreground">Theme</label>
                   <Select
                     value={selectedTheme.value}
@@ -385,7 +385,7 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
                       setTheme(val as "light" | "dark" | "system");
                     }}
                   >
-                    <SelectTrigger size="sm" className="w-32">
+                    <SelectTrigger size="sm" className="w-auto">
                       <SelectValue>{selectedTheme.label}</SelectValue>
                     </SelectTrigger>
                     <SelectPopup>
@@ -403,13 +403,13 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
             {/* Notifications Tab */}
             <TabsPanel value="notifications">
               <div className="space-y-4">
-                <SettingsCheckbox
+                <SettingsSwitch
                   checked={showBackgroundNotification}
                   onCheckedChange={handleToggleBackgroundNotification}
                   title="Background Operation Alert"
                   description="Show a notification when Hat continues to run in the background after closing the window."
                 />
-                <SettingsCheckbox
+                <SettingsSwitch
                   checked={showSystemNotifications}
                   onCheckedChange={handleToggleSystemNotifications}
                   title="System Notifications"

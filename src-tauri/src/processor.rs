@@ -34,7 +34,6 @@ pub fn process_file(
     path: &Path,
 ) -> Result<CompressionRecord, String> {
     let format = ImageFormat::from_path(path).ok_or_else(|| "Unsupported format".to_string())?;
-    let output = compressed_output_path(path).ok_or_else(|| "Invalid output path".to_string())?;
 
     // Wait for the file to be fully written (useful for downloads)
     if let Err(e) = wait_for_file_stability(path) {
@@ -46,24 +45,23 @@ pub fn process_file(
     }
 
     let initial_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let (original_quality, png_palette) = app
+    let (original_quality, png_palette, convert_to) = app
         .state::<Mutex<crate::config::ConfigManager>>()
         .lock()
         .map(|c| {
             let opts = &c.config.format_options;
-            let quality = match format {
-                ImageFormat::Png => opts.png.quality,
-                ImageFormat::Jpeg => opts.jpeg.quality,
-                ImageFormat::Webp => opts.webp.quality,
-                ImageFormat::Tiff => opts.tiff.quality,
-                ImageFormat::Heif => opts.heif.quality,
-                ImageFormat::Avif => opts.avif.quality,
-                ImageFormat::Gif => opts.gif.quality,
-                ImageFormat::Jxl => opts.jxl.quality,
+            let (quality, convert_to_str) = match format {
+                ImageFormat::Png => (opts.png.quality, opts.png.convert_to.clone()),
+                ImageFormat::Jpeg => (opts.jpeg.quality, opts.jpeg.convert_to.clone()),
             };
-            (quality, opts.png.palette)
+            let target = convert_to_str.and_then(|s| ImageFormat::from_extension(&s));
+            (quality, opts.png.palette, target)
         })
-        .unwrap_or((crate::DEFAULT_QUALITY, false));
+        .unwrap_or((crate::DEFAULT_QUALITY, false, None::<ImageFormat>));
+
+    let target_ext = convert_to.map(|f| f.extension());
+    let output = compressed_output_path(path, target_ext)
+        .ok_or_else(|| "Invalid output path".to_string())?;
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -86,7 +84,7 @@ pub fn process_file(
     const QUALITY_STEP: u8 = 10;
 
     for attempt in 0..=MAX_RETRIES {
-        match vips.compress(path, &output, current_quality, png_palette) {
+        match vips.compress(path, &output, current_quality, png_palette, convert_to) {
             Ok(size) => {
                 compressed_size = size;
                 if size <= initial_size || current_quality >= 100 {
@@ -140,7 +138,7 @@ pub fn process_file(
             initial_size,
             compressed_size,
             initial_format: format.to_string(),
-            final_format: format.to_string(),
+            final_format: convert_to.unwrap_or(format).to_string(),
             quality: current_quality,
             timestamp,
             original_deleted: false,

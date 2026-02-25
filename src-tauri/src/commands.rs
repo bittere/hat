@@ -140,7 +140,7 @@ pub fn recompress(
 
     let format =
         ImageFormat::from_path(input).ok_or_else(|| "Unsupported image format".to_string())?;
-    let output = compressed_output_path(input)
+    let output = compressed_output_path(input, None)
         .ok_or_else(|| "Could not determine output path".to_string())?;
     let initial_size = std::fs::metadata(input)
         .map(|m| m.len())
@@ -167,7 +167,7 @@ pub fn recompress(
         .unwrap_or(false);
 
     let quality: u8 = previous_quality.saturating_add(10).min(100);
-    let compressed_size = match vips.compress(input, &output, quality, png_palette) {
+    let compressed_size = match vips.compress(input, &output, quality, png_palette, None) {
         Ok(s) => s,
         Err(e) => {
             let err_msg = e.to_string();

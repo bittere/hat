@@ -37,8 +37,7 @@ pub fn init_watcher(app: &tauri::AppHandle) {
     app.manage(VipsState { vips: vips.clone() });
 
     let handle = app.clone();
-    let recent_files: Arc<Mutex<HashMap<PathBuf, Instant>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let recent_files: Arc<Mutex<HashMap<PathBuf, Instant>>> = Arc::new(Mutex::new(HashMap::new()));
     let watcher_res = notify::recommended_watcher(move |res: Result<Event, _>| {
         if let Ok(event) = res {
             let dominated = matches!(

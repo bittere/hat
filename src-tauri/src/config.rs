@@ -5,6 +5,8 @@ use std::path::PathBuf;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FormatConfig {
     pub quality: u8,
+    #[serde(default)]
+    pub convert_to: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -12,32 +14,29 @@ pub struct PngConfig {
     pub quality: u8,
     #[serde(default)]
     pub palette: bool,
+    #[serde(default)]
+    pub convert_to: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FormatOptions {
     pub png: PngConfig,
     pub jpeg: FormatConfig,
-    pub webp: FormatConfig,
-    pub tiff: FormatConfig,
-    pub heif: FormatConfig,
-    pub avif: FormatConfig,
-    pub gif: FormatConfig,
-    pub jxl: FormatConfig,
 }
 
 impl Default for FormatOptions {
     fn default() -> Self {
         let q = crate::DEFAULT_QUALITY;
         Self {
-            png: PngConfig { quality: q, palette: false },
-            jpeg: FormatConfig { quality: q },
-            webp: FormatConfig { quality: q },
-            tiff: FormatConfig { quality: q },
-            heif: FormatConfig { quality: q },
-            avif: FormatConfig { quality: q },
-            gif: FormatConfig { quality: q },
-            jxl: FormatConfig { quality: q },
+            png: PngConfig {
+                quality: q,
+                palette: false,
+                convert_to: None,
+            },
+            jpeg: FormatConfig {
+                quality: q,
+                convert_to: None,
+            },
         }
     }
 }

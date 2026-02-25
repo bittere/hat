@@ -1,7 +1,7 @@
-import { Checkbox } from "./checkbox";
+import { Switch } from "./switch";
 import { cn } from "@/lib/utils";
 
-interface SettingsCheckboxProps {
+interface SettingsSwitchProps {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   title: string;
@@ -10,28 +10,22 @@ interface SettingsCheckboxProps {
   className?: string;
 }
 
-export function SettingsCheckbox({
+export function SettingsSwitch({
   checked,
   onCheckedChange,
   title,
   description,
   disabled,
   className,
-}: SettingsCheckboxProps) {
+}: SettingsSwitchProps) {
   return (
     <label
       className={cn(
-        "flex items-start gap-3 cursor-pointer select-none py-1",
+        "flex items-center justify-between gap-4 cursor-pointer select-none py-2",
         disabled && "opacity-60 cursor-not-allowed",
         className
       )}
     >
-      <Checkbox
-        checked={checked}
-        onCheckedChange={(c) => onCheckedChange(c as boolean)}
-        disabled={disabled}
-        className="mt-0.5 shrink-0"
-      />
       <div className="flex flex-col gap-0.5 min-w-0">
         <span className="text-sm font-medium text-foreground leading-tight">
           {title}
@@ -42,6 +36,12 @@ export function SettingsCheckbox({
           </span>
         )}
       </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        className="shrink-0"
+      />
     </label>
   );
 }

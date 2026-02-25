@@ -33,20 +33,16 @@ export interface CompressionRetry {
 
 export interface FormatConfig {
   quality: number;
+  convert_to: string | null;
 }
 
 export interface PngConfig {
   quality: number;
   palette: boolean;
+  convert_to: string | null;
 }
 
 export interface FormatOptions {
   png: PngConfig;
   jpeg: FormatConfig;
-  webp: FormatConfig;
-  avif: FormatConfig;
-  heif: FormatConfig;
-  tiff: FormatConfig;
-  gif: FormatConfig;
-  jxl: FormatConfig;
 }

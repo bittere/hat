@@ -15,12 +15,6 @@ use std::path::Path;
 pub enum ImageFormat {
     Png,
     Jpeg,
-    Webp,
-    Tiff,
-    Heif,
-    Avif,
-    Gif,
-    Jxl,
 }
 
 impl ImageFormat {
@@ -28,12 +22,6 @@ impl ImageFormat {
         match ext.to_ascii_lowercase().as_str() {
             "png" => Some(Self::Png),
             "jpg" | "jpeg" => Some(Self::Jpeg),
-            "webp" => Some(Self::Webp),
-            "tif" | "tiff" => Some(Self::Tiff),
-            "heif" | "heic" => Some(Self::Heif),
-            "avif" => Some(Self::Avif),
-            "gif" => Some(Self::Gif),
-            "jxl" => Some(Self::Jxl),
             _ => None,
         }
     }
@@ -43,6 +31,13 @@ impl ImageFormat {
             .and_then(|e| e.to_str())
             .and_then(Self::from_extension)
     }
+
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpg",
+        }
+    }
 }
 
 impl std::fmt::Display for ImageFormat {
@@ -50,12 +45,6 @@ impl std::fmt::Display for ImageFormat {
         match self {
             Self::Png => write!(f, "png"),
             Self::Jpeg => write!(f, "jpeg"),
-            Self::Webp => write!(f, "webp"),
-            Self::Tiff => write!(f, "tiff"),
-            Self::Heif => write!(f, "heif"),
-            Self::Avif => write!(f, "avif"),
-            Self::Gif => write!(f, "gif"),
-            Self::Jxl => write!(f, "jxl"),
         }
     }
 }
@@ -213,7 +202,14 @@ impl Vips {
 
     // -- public API ---------------------------------------------------------
 
-    pub fn compress(&self, input: &Path, output: &Path, quality: u8, png_palette: bool) -> Result<u64> {
+    pub fn compress(
+        &self,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        png_palette: bool,
+        target_format: Option<ImageFormat>,
+    ) -> Result<u64> {
         let format = ImageFormat::from_path(input).ok_or_else(|| {
             CompressionError::UnsupportedFormat(
                 input
@@ -231,14 +227,10 @@ impl Vips {
             quality, q
         );
 
-        match format {
+        let effective_format = target_format.unwrap_or(format);
+        match effective_format {
             ImageFormat::Png => self.compress_png(input, output, q, png_palette),
             ImageFormat::Jpeg => self.compress_jpeg(input, output, q),
-            ImageFormat::Webp => self.compress_webp(input, output, q),
-            ImageFormat::Tiff => self.compress_tiff(input, output, q),
-            ImageFormat::Heif | ImageFormat::Avif => self.compress_heif(input, output, q),
-            ImageFormat::Gif => self.compress_gif(input, output, q),
-            ImageFormat::Jxl => self.compress_jxl(input, output, q),
         }
     }
 
@@ -246,7 +238,13 @@ impl Vips {
     // Options are passed via vips filename suffix syntax so we never call
     // variadic C functions through libloading.
 
-    pub fn compress_png(&self, input: &Path, output: &Path, quality: u8, palette: bool) -> Result<u64> {
+    pub fn compress_png(
+        &self,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        palette: bool,
+    ) -> Result<u64> {
         let q = quality.clamp(1, 100);
         let ui = 101u8.saturating_sub(q);
         let compression = ((ui as f32 / 100.0) * 9.0).round().clamp(0.0, 9.0) as i32;
@@ -303,112 +301,6 @@ impl Vips {
         );
         Ok(size)
     }
-
-    pub fn compress_webp(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
-        let q = quality.clamp(1, 100);
-        let suffix = format!("{}[Q={},strip=true]", output_str(output)?, q,);
-
-        info!("[compression] WebP save params: {}", suffix);
-        let img = self.load_image(input)?;
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
-
-        let size = fs::metadata(output)?.len();
-        info!(
-            "[compression] WebP {} → {} bytes (q={})",
-            input.display(),
-            size,
-            q
-        );
-        Ok(size)
-    }
-
-    pub fn compress_tiff(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
-        let q = quality.clamp(1, 100);
-        let suffix = format!(
-            "{}[Q={},compression=jpeg,strip=true]",
-            output_str(output)?,
-            q,
-        );
-
-        info!("[compression] TIFF save params: {}", suffix);
-        let img = self.load_image(input)?;
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
-
-        let size = fs::metadata(output)?.len();
-        info!(
-            "[compression] TIFF {} → {} bytes (q={})",
-            input.display(),
-            size,
-            q
-        );
-        Ok(size)
-    }
-
-    pub fn compress_heif(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
-        let q = quality.clamp(1, 100);
-        let suffix = format!("{}[Q={},strip=true]", output_str(output)?, q,);
-
-        info!("[compression] HEIF save params: {}", suffix);
-        let img = self.load_image(input)?;
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
-
-        let size = fs::metadata(output)?.len();
-        info!(
-            "[compression] HEIF {} → {} bytes (q={})",
-            input.display(),
-            size,
-            q
-        );
-        Ok(size)
-    }
-
-    pub fn compress_gif(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
-        let q = quality.clamp(1, 100);
-        let ui = 101u8.saturating_sub(q);
-        let effort = ((ui as f32 / 100.0) * 10.0).round().clamp(1.0, 10.0) as i32;
-        let suffix = format!("{}[effort={},dither=1.0]", output_str(output)?, effort,);
-
-        info!("[compression] GIF save params: {}", suffix);
-        let img = self.load_image(input)?;
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
-
-        let size = fs::metadata(output)?.len();
-        info!(
-            "[compression] GIF {} → {} bytes (effort={})",
-            input.display(),
-            size,
-            effort
-        );
-        Ok(size)
-    }
-
-    pub fn compress_jxl(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
-        let q = quality.clamp(1, 100);
-        let suffix = format!("{}[Q={},effort=7,strip=true]", output_str(output)?, q,);
-
-        info!("[compression] JXL save params: {}", suffix);
-        let img = self.load_image(input)?;
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
-
-        let size = fs::metadata(output)?.len();
-        info!(
-            "[compression] JXL {} → {} bytes (q={})",
-            input.display(),
-            size,
-            q
-        );
-        Ok(size)
-    }
 }
 
 // Safety: Vips holds a loaded library + cached function pointers.
@@ -444,9 +336,15 @@ fn output_str(path: &Path) -> Result<String> {
         .ok_or_else(|| CompressionError::InvalidPath(path.display().to_string()))
 }
 
-pub fn compressed_output_path(input: &Path) -> Option<std::path::PathBuf> {
+pub fn compressed_output_path(
+    input: &Path,
+    target_ext: Option<&str>,
+) -> Option<std::path::PathBuf> {
     let stem = input.file_stem()?.to_str()?;
-    let ext = input.extension()?.to_str()?;
+    let ext = match target_ext {
+        Some(e) => e,
+        None => input.extension()?.to_str()?,
+    };
     let name = format!("{}_compressed.{}", stem, ext);
     Some(input.with_file_name(name))
 }
