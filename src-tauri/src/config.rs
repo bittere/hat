@@ -35,7 +35,7 @@ impl ConfigManager {
         let config = std::fs::read_to_string(&path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_else(AppConfig::default);
+            .unwrap_or_default();
 
         Self { config, path }
     }

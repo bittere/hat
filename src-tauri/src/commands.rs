@@ -297,10 +297,10 @@ pub async fn search_directories(query: String) -> Vec<String> {
 
     // 3. Filter special folders that match the query (start with it)
     for folder in special_folders {
-        if folder.to_lowercase().starts_with(&query_lower) {
-            if !results.contains(&folder) {
-                results.push(folder);
-            }
+        if folder.to_lowercase().starts_with(&query_lower)
+            && !results.contains(&folder)
+        {
+            results.push(folder);
         }
     }
 
@@ -318,8 +318,8 @@ pub async fn search_directories(query: String) -> Vec<String> {
     } else if let Some(parent) = path.parent() {
         let p_str = parent.as_os_str().to_string_lossy();
         if p_str.is_empty() {
-            if query.starts_with('/') {
-                (Path::new("/"), &query[1..])
+            if let Some(stripped) = query.strip_prefix('/') {
+                (Path::new("/"), stripped)
             } else {
                 (Path::new("."), query.as_str())
             }
