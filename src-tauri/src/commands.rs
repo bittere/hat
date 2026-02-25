@@ -297,9 +297,7 @@ pub async fn search_directories(query: String) -> Vec<String> {
 
     // 3. Filter special folders that match the query (start with it)
     for folder in special_folders {
-        if folder.to_lowercase().starts_with(&query_lower)
-            && !results.contains(&folder)
-        {
+        if folder.to_lowercase().starts_with(&query_lower) && !results.contains(&folder) {
             results.push(folder);
         }
     }
