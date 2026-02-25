@@ -27,7 +27,7 @@ concurrency:
 jobs:
   lint:
     name: Lint & Format Checks
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -45,11 +45,6 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
       # 2. Install frontend dependencies
       - name: Install frontend dependencies
         run: bun install
@@ -59,7 +54,7 @@ jobs:
         run: bun run setup:libvips
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LIBVIPS_TARGET: linux-x64
+          LIBVIPS_TARGET: darwin-arm64
 
       - name: Check formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
