@@ -27,7 +27,8 @@ If applicable, add screenshots to help explain your problem.
  - OS: [e.g. iOS]
  - Version [e.g. 22]
 
-Include any modifications you have made to your system that may cause any issues.
+**Any system modifications that could cause issues?**
+Eg. I use a hand-written window management system.
 
 **Additional context**
 Add any other context about the problem here.
