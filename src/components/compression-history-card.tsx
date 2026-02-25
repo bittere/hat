@@ -1,4 +1,4 @@
-import { Card, CardHeader, CardTitle, CardDescription, CardPanel, CardFooter } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardPanel, CardFooter } from "@/components/ui/card";
 import { ArrowDownLinear, ArrowUpLinear } from "@solar-icons/react-perf";
 import { Button } from "@/components/ui/button";
 import type { CompressionRecord } from "@/lib/types";
@@ -29,12 +29,14 @@ export function CompressionHistoryCard({ record, cannotRecompress, onRecompress 
       isProcessing && "animate-pulse"
     )}>
       <CardHeader>
-        <div className="flex items-center justify-between gap-2 overflow-hidden">
-          <CardTitle className={cn("truncate", isFailed && "text-destructive")} title={record.initial_path}>
-            {fileName}
-          </CardTitle>
-          {isProcessing && <Spinner className="size-3 shrink-0" />}
-        </div>
+        <CardTitle className={cn("truncate", isFailed && "text-destructive")} title={record.initial_path}>
+          {fileName}
+        </CardTitle>
+        {isProcessing && (
+          <CardAction>
+            <Spinner className="size-3" />
+          </CardAction>
+        )}
         <CardDescription className="truncate" title={directory}>
           {isProcessing ? "Processing..." : isFailed ? "Compression failed" : `${record.initial_format} → ${record.final_format} • ${record.quality}% • ${time}`}
         </CardDescription>

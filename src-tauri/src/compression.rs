@@ -213,7 +213,7 @@ impl Vips {
 
     // -- public API ---------------------------------------------------------
 
-    pub fn compress(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
+    pub fn compress(&self, input: &Path, output: &Path, quality: u8, png_palette: bool) -> Result<u64> {
         let format = ImageFormat::from_path(input).ok_or_else(|| {
             CompressionError::UnsupportedFormat(
                 input
@@ -232,7 +232,7 @@ impl Vips {
         );
 
         match format {
-            ImageFormat::Png => self.compress_png(input, output, q),
+            ImageFormat::Png => self.compress_png(input, output, q, png_palette),
             ImageFormat::Jpeg => self.compress_jpeg(input, output, q),
             ImageFormat::Webp => self.compress_webp(input, output, q),
             ImageFormat::Tiff => self.compress_tiff(input, output, q),
@@ -246,13 +246,13 @@ impl Vips {
     // Options are passed via vips filename suffix syntax so we never call
     // variadic C functions through libloading.
 
-    pub fn compress_png(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
+    pub fn compress_png(&self, input: &Path, output: &Path, quality: u8, palette: bool) -> Result<u64> {
         let q = quality.clamp(1, 100);
         let ui = 101u8.saturating_sub(q);
         let compression = ((ui as f32 / 100.0) * 9.0).round().clamp(0.0, 9.0) as i32;
 
         let out = output_str(output)?;
-        let suffix = if ui >= 80 {
+        let suffix = if palette {
             format!(
                 "{}[compression={},palette,colours=256,Q={},dither=0.5,effort=10,filter=248,strip,bitdepth=8]",
                 out, compression, q,

@@ -3,11 +3,53 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FormatConfig {
+    pub quality: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PngConfig {
+    pub quality: u8,
+    #[serde(default)]
+    pub palette: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FormatOptions {
+    pub png: PngConfig,
+    pub jpeg: FormatConfig,
+    pub webp: FormatConfig,
+    pub tiff: FormatConfig,
+    pub heif: FormatConfig,
+    pub avif: FormatConfig,
+    pub gif: FormatConfig,
+    pub jxl: FormatConfig,
+}
+
+impl Default for FormatOptions {
+    fn default() -> Self {
+        let q = crate::DEFAULT_QUALITY;
+        Self {
+            png: PngConfig { quality: q, palette: false },
+            jpeg: FormatConfig { quality: q },
+            webp: FormatConfig { quality: q },
+            tiff: FormatConfig { quality: q },
+            heif: FormatConfig { quality: q },
+            avif: FormatConfig { quality: q },
+            gif: FormatConfig { quality: q },
+            jxl: FormatConfig { quality: q },
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub watched_folders: Vec<String>,
     pub quality: u8,
     pub show_background_notification: bool,
     pub show_system_notifications: bool,
+    #[serde(default)]
+    pub format_options: FormatOptions,
 }
 
 impl Default for AppConfig {
@@ -21,6 +63,7 @@ impl Default for AppConfig {
             quality: crate::DEFAULT_QUALITY,
             show_background_notification: true,
             show_system_notifications: true,
+            format_options: FormatOptions::default(),
         }
     }
 }
@@ -80,6 +123,11 @@ impl ConfigManager {
 
     pub fn set_show_system_notifications(&mut self, show: bool) {
         self.config.show_system_notifications = show;
+        let _ = self.save();
+    }
+
+    pub fn set_format_options(&mut self, options: FormatOptions) {
+        self.config.format_options = options;
         let _ = self.save();
     }
 }

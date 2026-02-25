@@ -30,3 +30,23 @@ export interface CompressionRetry {
   initial_size: number;
   compressed_size: number;
 }
+
+export interface FormatConfig {
+  quality: number;
+}
+
+export interface PngConfig {
+  quality: number;
+  palette: boolean;
+}
+
+export interface FormatOptions {
+  png: PngConfig;
+  jpeg: FormatConfig;
+  webp: FormatConfig;
+  avif: FormatConfig;
+  heif: FormatConfig;
+  tiff: FormatConfig;
+  gif: FormatConfig;
+  jxl: FormatConfig;
+}

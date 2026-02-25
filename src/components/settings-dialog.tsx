@@ -3,7 +3,7 @@ import { Tuning2Linear, AltArrowDownLinear, AddFolderLinear } from "@solar-icons
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toggle } from "@/components/ui/toggle";
-import { Slider, SliderValue } from "@/components/ui/slider";
+import { FormatQualitySettings } from "@/components/format-quality-settings";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
@@ -46,8 +46,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { useTheme } from "@/components/theme-provider";
 
 interface SettingsDialogProps {
-  quality: number;
-  onQualityChange: (value: number) => void;
   onOpenChange?: (open: boolean) => void;
 }
 
@@ -57,7 +55,7 @@ const themeItems = [
   { label: "Dark", value: "dark" },
 ] as const;
 
-export function SettingsDialog({ quality, onQualityChange, onOpenChange }: SettingsDialogProps) {
+export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
   const [searchValue, setSearchValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<string[]>([]);
@@ -246,47 +244,30 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
       >
         <Tuning2Linear />
       </DialogTrigger>
-      <DialogPopup>
+      <DialogPopup className="max-w-2xl h-[28rem]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>Configure compression and appearance.</DialogDescription>
         </DialogHeader>
         <DialogPanel>
-          <Tabs defaultValue="compression">
-            <TabsList>
-              <TabsTab value="compression">Compression</TabsTab>
-              <TabsTab value="folders">Folders</TabsTab>
-              <TabsTab value="appearance">Appearance</TabsTab>
-              <TabsTab value="notifications">Notifications</TabsTab>
-            </TabsList>
+          <Tabs defaultValue="compression" orientation="vertical">
+            <div className="border-s">
+              <TabsList variant="underline">
+                <TabsTab value="compression">Compression</TabsTab>
+                <TabsTab value="folders">Folders</TabsTab>
+                <TabsTab value="appearance">Appearance</TabsTab>
+                <TabsTab value="notifications">Notifications</TabsTab>
+              </TabsList>
+            </div>
 
             {/* Compression Tab */}
             <TabsPanel value="compression">
-              <div className="space-y-4 pt-2">
-                <Slider
-                  min={1}
-                  max={100}
-                  value={quality}
-                  onValueChange={(val) => {
-                    if (typeof val === "number") {
-                      onQualityChange(val);
-                    } else if (Array.isArray(val) && typeof val[0] === "number") {
-                      onQualityChange(val[0]);
-                    }
-                  }}
-                  className="space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-foreground">Compression Level</label>
-                    <SliderValue className="text-sm tabular-nums text-muted-foreground" />
-                  </div>
-                </Slider>
-              </div>
+              <FormatQualitySettings />
             </TabsPanel>
 
             {/* Folders Tab */}
             <TabsPanel value="folders">
-              <div className="space-y-3 pt-2">
+              <div className="space-y-3">
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <Autocomplete
@@ -395,7 +376,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
 
             {/* Appearance Tab */}
             <TabsPanel value="appearance">
-              <div className="space-y-4 pt-2">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium text-foreground">Theme</label>
                   <Select
@@ -421,7 +402,7 @@ export function SettingsDialog({ quality, onQualityChange, onOpenChange }: Setti
 
             {/* Notifications Tab */}
             <TabsPanel value="notifications">
-              <div className="space-y-4 pt-2">
+              <div className="space-y-4">
                 <SettingsCheckbox
                   checked={showBackgroundNotification}
                   onCheckedChange={handleToggleBackgroundNotification}

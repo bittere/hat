@@ -3,9 +3,6 @@
 ## Build & Dev Commands
 - **Dev:** `bun run tauri dev` (starts Vite + Tauri together)
 - **Build:** `bun run build:tauri` (sets up libvips, then `tsc && vite build`)
----
-Note: you can skip running these commands as the dev server automatically performs this.
----
 - **Type-check frontend:** `bunx tsc --noEmit`
 - **Check Rust:** `cargo check` (run from `src-tauri/`)
 - **Package manager:** Bun (not npm/yarn)
@@ -15,9 +12,12 @@ Note: you can skip running these commands as the dev server automatically perfor
 - Rust entry point: `src-tauri/src/lib.rs`. Tauri commands are `#[tauri::command]` fns registered in `invoke_handler`.
 - Frontend uses **React 19**, **Vite 7**, **Tailwind CSS v4** (`@tailwindcss/vite`), **TypeScript** (strict mode).
 - UI components: coss UI registry, (https://coss.com/ui/llms.txt) in `src/components/ui/`. Icons: **@solar-icons/react-perf**. 
+
 ---
-Note: USE ONLY OFFICIAL COSS UI COMPONENTS. INSTALL THEM WITH THE CLI. DO NOT WRITE YOUR OWN COMPONENTS
+Note: USE ONLY OFFICIAL COSS UI COMPONENTS. INSTALL THEM WITH THE CLI.
+When you absolutely need to create your own components or write your own code, make sure to break it up into proper reusable components.
 ---
+
 - Path alias: `@/*` → `./src/*`. Utility: `src/lib/utils.ts` (`cn()` via clsx + tailwind-merge).
 - Hooks go in `src/hooks/`. Rust↔frontend communication via Tauri events (`emit`/`listen`) and commands (`invoke`).
 - When using Solar icons, import using: `import { <icon name> } from "@solar-icons/react-perf"`, where icon name is made up of the name of the icon and it's variant eg. BillCrossLinear.

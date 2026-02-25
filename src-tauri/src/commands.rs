@@ -66,6 +66,25 @@ pub fn set_show_system_notifications(
 }
 
 #[tauri::command]
+pub fn get_format_options(
+    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
+) -> Result<crate::config::FormatOptions, String> {
+    let config_manager = config.lock().map_err(|e| e.to_string())?;
+    Ok(config_manager.config.format_options.clone())
+}
+
+#[tauri::command]
+pub fn set_format_options(
+    options: crate::config::FormatOptions,
+    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
+) -> Result<crate::config::FormatOptions, String> {
+    let mut config_manager = config.lock().map_err(|e| e.to_string())?;
+    config_manager.set_format_options(options.clone());
+    info!("[config] Format options updated: {:?}", options);
+    Ok(options)
+}
+
+#[tauri::command]
 pub fn get_compression_history(
     log: tauri::State<'_, Mutex<crate::log::CompressionLog>>,
 ) -> Vec<CompressionRecord> {
@@ -141,8 +160,14 @@ pub fn recompress(
         },
     );
 
+    let png_palette = app
+        .state::<Mutex<crate::config::ConfigManager>>()
+        .lock()
+        .map(|c| c.config.format_options.png.palette)
+        .unwrap_or(false);
+
     let quality: u8 = previous_quality.saturating_add(10).min(100);
-    let compressed_size = match vips.compress(input, &output, quality) {
+    let compressed_size = match vips.compress(input, &output, quality, png_palette) {
         Ok(s) => s,
         Err(e) => {
             let err_msg = e.to_string();

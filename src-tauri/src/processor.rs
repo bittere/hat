@@ -46,11 +46,24 @@ pub fn process_file(
     }
 
     let initial_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let original_quality = app
+    let (original_quality, png_palette) = app
         .state::<Mutex<crate::config::ConfigManager>>()
         .lock()
-        .map(|c| c.config.quality)
-        .unwrap_or(crate::DEFAULT_QUALITY);
+        .map(|c| {
+            let opts = &c.config.format_options;
+            let quality = match format {
+                ImageFormat::Png => opts.png.quality,
+                ImageFormat::Jpeg => opts.jpeg.quality,
+                ImageFormat::Webp => opts.webp.quality,
+                ImageFormat::Tiff => opts.tiff.quality,
+                ImageFormat::Heif => opts.heif.quality,
+                ImageFormat::Avif => opts.avif.quality,
+                ImageFormat::Gif => opts.gif.quality,
+                ImageFormat::Jxl => opts.jxl.quality,
+            };
+            (quality, opts.png.palette)
+        })
+        .unwrap_or((crate::DEFAULT_QUALITY, false));
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -73,7 +86,7 @@ pub fn process_file(
     const QUALITY_STEP: u8 = 10;
 
     for attempt in 0..=MAX_RETRIES {
-        match vips.compress(path, &output, current_quality) {
+        match vips.compress(path, &output, current_quality, png_palette) {
             Ok(size) => {
                 compressed_size = size;
                 if size <= initial_size || current_quality >= 100 {

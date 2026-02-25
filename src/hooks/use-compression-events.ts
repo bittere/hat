@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toastManager } from "@/components/ui/toast";
@@ -6,13 +6,8 @@ import type { CompressionRecord, CompressionRetry, CompressionStarted, Compressi
 import { formatBytes, extractFileName } from "@/lib/format";
 
 export function useCompressionEvents() {
-  const [quality, setQuality] = useState(80);
   const [history, setHistory] = useState<CompressionRecord[]>([]);
   const [recompressed, setRecompressed] = useState<Set<number>>(() => new Set());
-
-  useEffect(() => {
-    invoke<number>("get_quality").then(setQuality);
-  }, []);
 
   useEffect(() => {
     invoke<CompressionRecord[]>("get_compression_history").then(records => {
@@ -148,19 +143,6 @@ export function useCompressionEvents() {
     }
   }, []);
 
-  const qualityTimer = useRef<ReturnType<typeof setTimeout>>(null);
-  const handleQualityChange = useCallback(
-    (val: number | readonly number[]) => {
-      const v = Array.isArray(val) ? val[0] : val;
-      setQuality(v);
-      if (qualityTimer.current) clearTimeout(qualityTimer.current);
-      qualityTimer.current = setTimeout(() => {
-        invoke("set_quality", { value: v });
-      }, 300);
-    },
-    [],
-  );
-
   const handleManualCompress = useCallback(async (paths: string[]) => {
     try {
       await invoke("compress_files", { paths });
@@ -174,13 +156,11 @@ export function useCompressionEvents() {
   }, []);
 
   return {
-    quality,
     history,
     recompressed,
     handleRecompress,
     handleClearHistory,
     handleDeleteOriginals,
-    handleQualityChange,
     handleManualCompress,
   };
 }

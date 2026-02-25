@@ -17,13 +17,11 @@ import "./App.css";
 
 function App() {
   const {
-    quality,
     history,
     recompressed,
     handleRecompress,
     handleClearHistory,
     handleDeleteOriginals,
-    handleQualityChange,
     handleManualCompress,
   } = useCompressionEvents();
 
@@ -69,7 +67,7 @@ function App() {
           Hat
         </h1>
         <div className="flex items-center gap-1">
-          <SettingsDialog quality={quality} onQualityChange={handleQualityChange} onOpenChange={(open) => { settingsOpen.current = open; }} />
+          <SettingsDialog onOpenChange={(open) => { settingsOpen.current = open; }} />
         </div>
       </header>
       <div className="flex gap-4 p-4 flex-1 min-h-0">
