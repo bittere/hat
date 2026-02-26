@@ -12,7 +12,7 @@ echo "==> Running Biome on staged files..."
 bunx lint-staged
 
 # Check if any Rust files are staged
-STAGED_RS=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$')
+STAGED_RS=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$' || true)
 
 if [ -n "$STAGED_RS" ]; then
   echo "Rust files staged — running cargo fmt and clippy..."
