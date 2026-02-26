@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+
+# Run TypeScript type checking on the whole project
+echo "==> Running TypeScript type check..."
+if ! bun run typecheck; then
+  echo "TypeScript type check failed. Fix the errors above."
+  exit 1
+fi
+
+# Run Biome on staged TypeScript/JS/JSON files
+echo "==> Running Biome on staged files..."
+bunx lint-staged
+
+# Check if any Rust files are staged
+STAGED_RS=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$')
+
+if [ -n "$STAGED_RS" ]; then
+  echo "Rust files staged — running cargo fmt and clippy..."
+
+  cd src-tauri
+
+  # Check formatting
+  cargo fmt --all -- --check
+  if [ $? -ne 0 ]; then
+    echo "cargo fmt failed. Run 'cargo fmt' in src-tauri/ to fix."
+    exit 1
+  fi
+
+  # Run clippy
+  cargo clippy -- -D warnings
+  if [ $? -ne 0 ]; then
+    echo "cargo clippy failed. Fix the warnings above."
+    exit 1
+  fi
+
+  cd ..
+fi

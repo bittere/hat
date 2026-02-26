@@ -18,7 +18,10 @@ on:
       - "src/**"
       - "src-tauri/**"
       - "package.json"
-      - "bun.lockb"
+      - "bun.lock"
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
@@ -56,17 +59,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LIBVIPS_TARGET: darwin-arm64
 
-      - name: Check formatting
+      - name: Run frontend lint (Biome)
+        run: bun run lint
+
+      - name: Check formatting (Rust)
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
       - name: Run clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
   # 2. HEAVY MATRIX JOB
   build-tauri:
     name: Build (${{ matrix.libvips_target }})
     needs: lint # Wait for the lint job to succeed
+    
     permissions:
       contents: write
+      
     strategy:
       fail-fast: false
       matrix:

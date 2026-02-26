@@ -9,7 +9,14 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "setup:libvips": "bun run scripts/setup-libvips.ts",
-    "build:tauri": "bun run setup:libvips && bun run build"
+    "build:tauri": "bun run setup:libvips && bun run build",
+    "prepare": "husky",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write --unsafe src",
+    "typecheck": "tsc --noEmit"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx,js,jsx,json}": "biome check --no-errors-on-unmatched --files-ignore-unknown=true"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
@@ -30,12 +37,17 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.2.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1",
+    "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"

@@ -1,48 +1,48 @@
 export interface CompressionRecord {
-  initial_path: string;
-  final_path: string;
-  initial_size: number;
-  compressed_size: number;
-  initial_format: string;
-  final_format: string;
-  quality: number;
-  timestamp: number;
-  original_deleted: boolean;
-  status?: "processing" | "completed" | "failed";
+	initial_path: string;
+	final_path: string;
+	initial_size: number;
+	compressed_size: number;
+	initial_format: string;
+	final_format: string;
+	quality: number;
+	timestamp: number;
+	original_deleted: boolean;
+	status?: "processing" | "completed" | "failed";
 }
 
 export interface CompressionStarted {
-  initial_path: string;
-  timestamp: number;
+	initial_path: string;
+	timestamp: number;
 }
 
 export interface CompressionFailed {
-  initial_path: string;
-  timestamp: number;
-  error: string;
+	initial_path: string;
+	timestamp: number;
+	error: string;
 }
 
 export interface CompressionRetry {
-  path: string;
-  attempt: number;
-  original_quality: number;
-  retry_quality: number;
-  initial_size: number;
-  compressed_size: number;
+	path: string;
+	attempt: number;
+	original_quality: number;
+	retry_quality: number;
+	initial_size: number;
+	compressed_size: number;
 }
 
 export interface FormatConfig {
-  quality: number;
-  convert_to: string | null;
+	quality: number;
+	convert_to: string | null;
 }
 
 export interface PngConfig {
-  quality: number;
-  palette: boolean;
-  convert_to: string | null;
+	quality: number;
+	palette: boolean;
+	convert_to: string | null;
 }
 
 export interface FormatOptions {
-  png: PngConfig;
-  jpeg: FormatConfig;
+	png: PngConfig;
+	jpeg: FormatConfig;
 }
