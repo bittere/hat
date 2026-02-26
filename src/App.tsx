@@ -22,8 +22,8 @@ function App() {
 		history,
 		recompressed,
 		handleRecompress,
+		handleConvert,
 		handleClearHistory,
-		handleDeleteOriginals,
 		handleManualCompress,
 	} = useCompressionEvents();
 
@@ -111,15 +111,6 @@ function App() {
 						>
 							Clear History
 						</Button>
-						<Button
-							variant="destructive-outline"
-							size="sm"
-							className="w-full"
-							onClick={handleDeleteOriginals}
-							disabled={history.length === 0}
-						>
-							Delete Originals
-						</Button>
 					</div>
 				</div>
 
@@ -141,6 +132,11 @@ function App() {
 						filteredCount={filteredHistory.length}
 						recompressed={recompressed}
 						onRecompress={handleRecompress}
+						onConvert={handleConvert}
+						onClearFilters={() => {
+							setFilterDate(undefined);
+							setSearch("");
+						}}
 					/>
 				</div>
 			</div>

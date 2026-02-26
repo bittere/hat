@@ -99,32 +99,6 @@ pub fn clear_compression_history(log: tauri::State<'_, Mutex<crate::log::Compres
 }
 
 #[tauri::command]
-pub fn delete_original_images(
-    log: tauri::State<'_, Mutex<crate::log::CompressionLog>>,
-) -> Result<u32, String> {
-    let mut log = log.lock().map_err(|e| e.to_string())?;
-
-    let mut deleted = 0u32;
-    for record in log.records.iter_mut() {
-        if record.original_deleted {
-            continue;
-        }
-        let path = Path::new(&record.initial_path);
-        if path.exists() {
-            if let Err(e) = std::fs::remove_file(path) {
-                error!("[cleanup] Failed to delete {}: {e}", record.initial_path);
-            } else {
-                info!("[cleanup] Deleted original: {}", record.initial_path);
-                deleted += 1;
-            }
-        }
-        record.original_deleted = true;
-    }
-    let _ = log.save();
-    Ok(deleted)
-}
-
-#[tauri::command]
 pub fn recompress(
     path: String,
     previous_quality: u8,
@@ -211,6 +185,104 @@ pub fn recompress(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn convert_image(
+    path: String,
+    target_format: String,
+    app: tauri::AppHandle,
+    vips_state: tauri::State<'_, VipsState>,
+) -> Result<(), String> {
+    let vips = vips_state
+        .inner()
+        .vips
+        .as_ref()
+        .ok_or("libvips not available")?;
+    let input = Path::new(&path);
+
+    let source_format =
+        ImageFormat::from_path(input).ok_or_else(|| "Unsupported image format".to_string())?;
+    let dest_format = ImageFormat::from_extension(&target_format)
+        .ok_or_else(|| format!("Unsupported target format: {}", target_format))?;
+
+    let output = compressed_output_path(input, Some(dest_format.extension()))
+        .ok_or_else(|| "Could not determine output path".to_string())?;
+    let initial_size = std::fs::metadata(input)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())?;
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let _ = app.emit(
+        "compression-started",
+        &crate::processor::CompressionStarted {
+            initial_path: path.clone(),
+            timestamp,
+        },
+    );
+
+    let config = app.state::<Mutex<crate::config::ConfigManager>>();
+    let (quality, png_palette) = config
+        .lock()
+        .map(|c| {
+            let q = match dest_format {
+                ImageFormat::Png => c.config.format_options.png.quality,
+                ImageFormat::Jpeg => c.config.format_options.jpeg.quality,
+            };
+            (q, c.config.format_options.png.palette)
+        })
+        .unwrap_or((crate::DEFAULT_QUALITY, false));
+
+    let compressed_size =
+        match vips.compress(input, &output, quality, png_palette, Some(dest_format)) {
+            Ok(s) => s,
+            Err(e) => {
+                let err_msg = e.to_string();
+                let _ = app.emit(
+                    "compression-failed",
+                    &crate::processor::CompressionFailed {
+                        initial_path: path.clone(),
+                        timestamp,
+                        error: err_msg.clone(),
+                    },
+                );
+                return Err(err_msg);
+            }
+        };
+
+    let record = CompressionRecord {
+        initial_path: path.clone(),
+        final_path: output.display().to_string(),
+        initial_size,
+        compressed_size,
+        initial_format: source_format.to_string(),
+        final_format: dest_format.to_string(),
+        quality,
+        timestamp,
+        original_deleted: false,
+    };
+
+    info!(
+        "[conversion] Converted {} → {} ({} → {} bytes)",
+        record.initial_path, record.final_path, record.initial_size, record.compressed_size,
+    );
+
+    let _ = app.emit("compression-complete", &record);
+    let log = app.state::<Mutex<crate::log::CompressionLog>>();
+    if let Ok(mut log) = log.lock() {
+        log.append(record);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn check_file_exists(path: String) -> bool {
+    Path::new(&path).exists()
 }
 
 #[tauri::command]

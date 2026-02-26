@@ -1,5 +1,14 @@
 import { BillCrossLinear, FileSendLinear } from "@solar-icons/react-perf";
 import { CompressionHistoryCard } from "@/components/compression-history-card";
+import { Button } from "@/components/ui/button";
+import {
+	Empty,
+	EmptyContent,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CompressionRecord } from "@/lib/types";
 
@@ -12,6 +21,8 @@ interface HistoryListProps {
 	filteredCount: number;
 	recompressed: Set<number>;
 	onRecompress: (path: string, quality: number, timestamp: number) => void;
+	onConvert: (path: string, targetFormat: string, timestamp: number) => void;
+	onClearFilters: () => void;
 }
 
 export function HistoryList({
@@ -20,22 +31,39 @@ export function HistoryList({
 	filteredCount,
 	recompressed,
 	onRecompress,
+	onConvert,
+	onClearFilters,
 }: HistoryListProps) {
 	if (historyLength === 0) {
 		return (
-			<div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-				<FileSendLinear className="size-12" />
-				<p className="text-sm">No compressions found.</p>
-			</div>
+			<Empty>
+				<EmptyHeader>
+					<EmptyMedia variant="icon">
+						<FileSendLinear />
+					</EmptyMedia>
+					<EmptyTitle>No compressions yet</EmptyTitle>
+					<EmptyDescription>Compress an image to see your history here.</EmptyDescription>
+				</EmptyHeader>
+			</Empty>
 		);
 	}
 
 	if (filteredCount === 0) {
 		return (
-			<div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-				<BillCrossLinear className="size-12" />
-				<p className="text-sm">No results found.</p>
-			</div>
+			<Empty>
+				<EmptyHeader>
+					<EmptyMedia variant="icon">
+						<BillCrossLinear />
+					</EmptyMedia>
+					<EmptyTitle>No results found</EmptyTitle>
+					<EmptyDescription>Try a different search query.</EmptyDescription>
+				</EmptyHeader>
+				<EmptyContent>
+					<Button size="sm" variant="outline" onClick={onClearFilters}>
+						Clear filters
+					</Button>
+				</EmptyContent>
+			</Empty>
 		);
 	}
 
@@ -51,18 +79,17 @@ export function HistoryList({
 						>
 							{group.label}
 						</p>
-						<div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+						<div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
 							{group.items.map(({ record, index }) => {
 								const cannotRecompress =
-									record.original_deleted ||
-									recompressed.has(record.timestamp) ||
-									record.quality >= 100;
+									recompressed.has(record.timestamp) || record.quality >= 100;
 								return (
 									<CompressionHistoryCard
 										key={`${record.timestamp}-${index}`}
 										record={record}
 										cannotRecompress={cannotRecompress}
 										onRecompress={onRecompress}
+										onConvert={onConvert}
 									/>
 								);
 							})}

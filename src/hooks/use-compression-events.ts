@@ -134,23 +134,21 @@ export function useCompressionEvents() {
 		}
 	}, []);
 
-	const handleDeleteOriginals = useCallback(async () => {
-		try {
-			const deleted = await invoke<number>("delete_original_images");
-			setHistory((prev) => prev.map((r) => ({ ...r, original_deleted: true })));
-			toastManager.add({
-				title: "Originals deleted",
-				description: `${deleted} original image${deleted === 1 ? "" : "s"} deleted.`,
-				type: "info",
-			});
-		} catch (e) {
-			toastManager.add({
-				title: "Failed to delete originals",
-				description: String(e),
-				type: "error",
-			});
-		}
-	}, []);
+	const handleConvert = useCallback(
+		async (initialPath: string, targetFormat: string, timestamp: number) => {
+			setRecompressed((prev) => new Set(prev).add(timestamp));
+			try {
+				await invoke("convert_image", { path: initialPath, targetFormat });
+			} catch (e) {
+				toastManager.add({
+					title: "Conversion failed",
+					description: String(e),
+					type: "error",
+				});
+			}
+		},
+		[]
+	);
 
 	const handleManualCompress = useCallback(async (paths: string[]) => {
 		try {
@@ -168,8 +166,8 @@ export function useCompressionEvents() {
 		history,
 		recompressed,
 		handleRecompress,
+		handleConvert,
 		handleClearHistory,
-		handleDeleteOriginals,
 		handleManualCompress,
 	};
 }
