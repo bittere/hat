@@ -15,6 +15,7 @@ export function DragOverlay() {
 	const [label, setLabel] = useState("");
 	const [isFolder, setIsFolder] = useState(false);
 	const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+	const [unsupported, setUnsupported] = useState(false);
 	const posRef = useRef({ x: 0, y: 0 });
 	const elRef = useRef<HTMLDivElement>(null);
 
@@ -41,6 +42,9 @@ export function DragOverlay() {
 					const hasExt = ext !== "";
 					setIsFolder(!hasExt);
 
+					const isUnsupported = hasExt && !IMAGE_EXTS.has(ext);
+					setUnsupported(isUnsupported);
+
 					if (payload.paths.length > 1) {
 						setLabel(`${payload.paths.length} items`);
 						setPreviewSrc(null);
@@ -54,16 +58,14 @@ export function DragOverlay() {
 					}
 
 					if (elRef.current) {
-						elRef.current.style.left = `${logical.x}px`;
-						elRef.current.style.top = `${logical.y}px`;
+						elRef.current.style.transform = `translate(${logical.x}px, ${logical.y}px)`;
 					}
 					setVisible(true);
 				} else if (payload.type === "over") {
 					const logical = payload.position.toLogical(window.devicePixelRatio);
 					posRef.current = { x: logical.x, y: logical.y };
 					if (elRef.current) {
-						elRef.current.style.left = `${logical.x}px`;
-						elRef.current.style.top = `${logical.y}px`;
+						elRef.current.style.transform = `translate(${logical.x}px, ${logical.y}px)`;
 					}
 				} else {
 					setVisible(false);
@@ -96,19 +98,29 @@ export function DragOverlay() {
 	return (
 		<div
 			ref={elRef}
-			className="pointer-events-none fixed z-9999"
+			className="pointer-events-none fixed top-0 left-0 z-9999"
 			style={{
-				left: posRef.current.x,
-				top: posRef.current.y,
+				transform: `translate(${posRef.current.x}px, ${posRef.current.y}px)`,
 			}}
 		>
-			<div className="-mt-3 flex -translate-x-1/2 -translate-y-full flex-col items-center gap-1.5 rounded-xl bg-primary px-4 py-3 text-primary-foreground shadow-lg">
-				{previewSrc ? (
-					<img src={previewSrc} alt="" className="max-h-32 max-w-32 rounded-md" />
-				) : (
-					<Icon className="size-10" />
-				)}
-				<span className="max-w-[180px] truncate font-medium text-xs">{label}</span>
+			<div className="-mt-3 -translate-x-1/2 -translate-y-full">
+				<div
+					className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-4 py-3 shadow-lg ${
+						unsupported
+							? "border-destructive bg-card text-destructive-foreground"
+							: "border-border bg-card text-card-foreground"
+					}`}
+				>
+					{previewSrc ? (
+						<img src={previewSrc} alt="" className="max-h-32 max-w-32 rounded-md" />
+					) : (
+						<Icon className="size-10" />
+					)}
+					<span className="max-w-[180px] truncate font-medium text-xs">{label}</span>
+					{unsupported && (
+						<span className="font-medium text-xs">This file type is unsupported</span>
+					)}
+				</div>
 			</div>
 		</div>
 	);

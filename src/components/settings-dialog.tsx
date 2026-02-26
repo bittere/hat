@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Dropzone } from "@/components/dropzone";
 import { FormatQualitySettings } from "@/components/format-quality-settings";
 import { useTheme } from "@/components/theme-provider";
 import {
@@ -316,18 +317,14 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 									</Button>
 								</div>
 
-								<button
-									type="button"
-									className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary ${
-										isDragOver
-											? "border-primary bg-primary/5 text-primary"
-											: "border-muted-foreground/25 text-muted-foreground"
-									}`}
+								<Dropzone
+									icon={<AddFolderLinear className="size-6" />}
+									isDragOver={isDragOver}
 									onClick={handleBrowseFolders}
+									className="w-full"
 								>
-									<AddFolderLinear className="size-6" />
-									<p className="text-xs">Drop folders here to watch, or click to browse</p>
-								</button>
+									Drop folders here to watch, or click to browse
+								</Dropzone>
 
 								<Collapsible>
 									<CollapsibleTrigger className="flex items-center gap-2 text-sm [&_svg]:transition-transform [&_svg]:duration-200 data-panel-open:[&_svg]:rotate-180">

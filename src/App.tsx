@@ -2,11 +2,13 @@ import { FileSendLinear } from "@solar-icons/react-perf";
 import { useCallback, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { DragOverlay } from "@/components/drag-overlay";
+import { Dropzone } from "@/components/dropzone";
 import { HistoryFilters } from "@/components/history-filters";
 import { HistoryList } from "@/components/history-list";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { StatisticsCard } from "@/components/statistics-card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogPopup } from "@/components/ui/dialog";
 import { toastManager } from "@/components/ui/toast";
 import { useCompressionEvents } from "@/hooks/use-compression-events";
 import { useDownloadsWatcher } from "@/hooks/use-downloads-watcher";
@@ -40,9 +42,18 @@ function App() {
 		[handleManualCompress]
 	);
 
-	const { isDragOver } = useDragDrop(handleManualDrop);
+	const { isDragOver, dragItems } = useDragDrop(handleManualDrop);
 
-	const showDropZone = isDragOver && !settingsOpen.current;
+	const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff"]);
+	const hasNonImage =
+		dragItems.length > 0 &&
+		dragItems.some((item) => {
+			const dot = item.name.lastIndexOf(".");
+			const ext = dot >= 0 ? item.name.slice(dot + 1).toLowerCase() : "";
+			return !IMAGE_EXTS.has(ext);
+		});
+
+	const showDropZone = isDragOver && !settingsOpen.current && !hasNonImage;
 
 	const handleNewDownload = useCallback((path: string) => {
 		const fileName = extractFileName(path);
@@ -58,12 +69,17 @@ function App() {
 	return (
 		<main className="relative flex h-screen flex-col">
 			<DragOverlay />
-			{showDropZone && (
-				<div className="fade-in zoom-in pointer-events-none absolute inset-0 z-50 m-2 flex animate-in flex-col items-center justify-center gap-3 rounded-2xl border-4 border-primary border-dashed bg-primary/5 text-primary backdrop-blur-sm duration-200">
-					<FileSendLinear className="size-16" />
-					<p className="font-medium text-sm">Drop images here to compress</p>
-				</div>
-			)}
+			<Dialog open={showDropZone}>
+				<DialogPopup showCloseButton={false}>
+					<Dropzone
+						icon={<FileSendLinear className="size-10" />}
+						isDragOver
+						className="m-1 flex-1 rounded-[calc(var(--radius-2xl)-1px)] py-16 font-medium"
+					>
+						Drop images here to compress
+					</Dropzone>
+				</DialogPopup>
+			</Dialog>
 			<header className="flex w-full shrink-0 items-center justify-between border-border border-b px-4 py-3">
 				<h1 className="flex items-center gap-2 font-semibold text-lg">
 					<img src="/app-icon.svg" className="h-6 w-6" alt="Logo" />
