@@ -7,6 +7,7 @@ import { HistoryFilters } from "@/components/history-filters";
 import { HistoryList } from "@/components/history-list";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { StatisticsCard } from "@/components/statistics-card";
+import { TitleBar } from "@/components/title-bar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogPopup } from "@/components/ui/dialog";
 import { toastManager } from "@/components/ui/toast";
@@ -68,6 +69,13 @@ function App() {
 
 	return (
 		<main className="relative flex h-screen flex-col">
+			<TitleBar>
+				<SettingsDialog
+					onOpenChange={(open) => {
+						settingsOpen.current = open;
+					}}
+				/>
+			</TitleBar>
 			<DragOverlay />
 			<Dialog open={showDropZone}>
 				<DialogPopup showCloseButton={false}>
@@ -80,19 +88,7 @@ function App() {
 					</Dropzone>
 				</DialogPopup>
 			</Dialog>
-			<header className="flex w-full shrink-0 items-center justify-between border-border border-b px-4 py-3">
-				<h1 className="flex items-center gap-2 font-semibold text-lg">
-					<img src="/app-icon.svg" className="h-6 w-6" alt="Logo" />
-					Hat
-				</h1>
-				<div className="flex items-center gap-1">
-					<SettingsDialog
-						onOpenChange={(open) => {
-							settingsOpen.current = open;
-						}}
-					/>
-				</div>
-			</header>
+
 			<div className="flex min-h-0 flex-1 gap-4 p-4">
 				<div className="flex w-80 shrink-0 flex-col gap-3">
 					<StatisticsCard history={history} />
