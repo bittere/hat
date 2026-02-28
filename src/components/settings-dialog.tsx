@@ -40,6 +40,7 @@ import { SettingsSwitch } from "@/components/ui/settings-switch";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
+import { Toggle } from "@/components/ui/toggle";
 
 interface SettingsDialogProps {
 	onOpenChange?: (open: boolean) => void;
@@ -232,15 +233,9 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 	return (
 		<Dialog onOpenChange={handleOpenChange}>
 			<DialogTrigger
-				render={
-					<button
-						type="button"
-						className="inline-flex h-8 w-10 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						aria-label="Settings"
-					/>
-				}
+				render={<Toggle pressed={false} variant="outline" size="sm" aria-label="Settings" />}
 			>
-				<Tuning2Linear className="size-4" />
+				<Tuning2Linear />
 			</DialogTrigger>
 			<DialogPopup className="h-112 max-w-2xl">
 				<DialogHeader>
