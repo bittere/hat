@@ -464,3 +464,8 @@ pub async fn search_directories(query: String) -> Vec<String> {
 
     results
 }
+
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}

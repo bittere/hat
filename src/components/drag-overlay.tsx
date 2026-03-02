@@ -1,6 +1,7 @@
 import { FileSendLinear, FolderWithFilesLinear } from "@solar-icons/react-perf";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { Event } from "@tauri-apps/api/event";
+import { type DragDropEvent, getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff"]);
@@ -10,7 +11,11 @@ function getExt(name: string) {
 	return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
-export function DragOverlay() {
+interface DragOverlayProps {
+	onDrop?: (paths: string[]) => void;
+}
+
+export function DragOverlay({ onDrop }: DragOverlayProps) {
 	const [visible, setVisible] = useState(false);
 	const [label, setLabel] = useState("");
 	const [isFolder, setIsFolder] = useState(false);
@@ -24,7 +29,7 @@ export function DragOverlay() {
 		let cancelled = false;
 
 		const setup = async () => {
-			const unlisten = await appWindow.onDragDropEvent((event) => {
+			const unlisten = await appWindow.onDragDropEvent((event: Event<DragDropEvent>) => {
 				if (cancelled) return;
 				const payload = event.payload;
 
@@ -67,6 +72,12 @@ export function DragOverlay() {
 					if (elRef.current) {
 						elRef.current.style.transform = `translate(${logical.x}px, ${logical.y}px)`;
 					}
+				} else if (payload.type === "drop") {
+					setVisible(false);
+					setPreviewSrc(null);
+					if (onDrop) {
+						onDrop(payload.paths);
+					}
 				} else {
 					setVisible(false);
 					setPreviewSrc(null);
@@ -89,7 +100,7 @@ export function DragOverlay() {
 			cancelled = true;
 			unlisten?.();
 		};
-	}, []);
+	}, [onDrop]);
 
 	if (!visible) return null;
 

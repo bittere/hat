@@ -1,7 +1,8 @@
 import { AddFolderLinear, AltArrowDownLinear, Tuning2Linear } from "@solar-icons/react-perf";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
+import type { Event } from "@tauri-apps/api/event";
+import { type DragDropEvent, getCurrentWindow } from "@tauri-apps/api/window";
+import { open as openFolderPicker } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dropzone } from "@/components/dropzone";
 import { FormatQualitySettings } from "@/components/format-quality-settings";
@@ -39,11 +40,14 @@ import {
 import { SettingsSwitch } from "@/components/ui/settings-switch";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
-import { toastManager } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 
 interface SettingsDialogProps {
+	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	watchedFolders: string[];
+	addFolder: (path: string) => Promise<void>;
+	removeFolder: (path: string) => Promise<void>;
 }
 
 const themeItems = [
@@ -52,17 +56,25 @@ const themeItems = [
 	{ label: "Dark", value: "dark" },
 ] as const;
 
-export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
+export function SettingsDialog({
+	open,
+	onOpenChange,
+	watchedFolders,
+	addFolder,
+	removeFolder,
+}: SettingsDialogProps) {
 	const [searchValue, setSearchValue] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [searchResults, setSearchResults] = useState<string[]>([]);
-	const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
 	const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
 	const [isFocused, setIsFocused] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
 	const [showBackgroundNotification, setShowBackgroundNotification] = useState(true);
 	const [showSystemNotifications, setShowSystemNotifications] = useState(true);
+	const [activeTab, setActiveTab] = useState("compression");
 	const dialogOpenRef = useRef(false);
+	const activeTabRef = useRef("compression");
+	const dragHasFolderRef = useRef(false);
 	const { theme, setTheme } = useTheme();
 
 	const handleOpenChange = useCallback(
@@ -75,9 +87,58 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 	);
 
 	useEffect(() => {
-		invoke<string[]>("get_watched_folders").then(setWatchedFolders);
+		if (open !== undefined) {
+			dialogOpenRef.current = open;
+		}
+	}, [open]);
+
+	useEffect(() => {
 		invoke<boolean>("get_show_background_notification").then(setShowBackgroundNotification);
 		invoke<boolean>("get_show_system_notifications").then(setShowSystemNotifications);
+
+		const appWindow = getCurrentWindow();
+		let cancelled = false;
+
+		const setup = async () => {
+			const unlisten = await appWindow.onDragDropEvent((event: Event<DragDropEvent>) => {
+				if (cancelled || !dialogOpenRef.current) return;
+
+				const payload = event.payload;
+				if (payload.type === "enter") {
+					const hasFolder = payload.paths.some((path: string) => {
+						const name = path.split(/[/\\]/).pop() || "";
+						return !name.includes(".");
+					});
+					dragHasFolderRef.current = hasFolder;
+
+					if (hasFolder && activeTabRef.current === "folders") {
+						setIsDragOver(true);
+					}
+				} else if (payload.type === "over") {
+					if (dragHasFolderRef.current && activeTabRef.current === "folders") {
+						setIsDragOver(true);
+					}
+				} else {
+					dragHasFolderRef.current = false;
+					setIsDragOver(false);
+				}
+			});
+			return unlisten;
+		};
+
+		let unlisten: (() => void) | undefined;
+		setup().then((fn) => {
+			if (cancelled) {
+				fn();
+			} else {
+				unlisten = fn;
+			}
+		});
+
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
 	}, []);
 
 	const performSearch = useCallback(async (query: string) => {
@@ -107,25 +168,17 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 		};
 	}, [searchValue, performSearch]);
 
-	const addFolder = useCallback(async (path: string) => {
-		if (!path) return;
-		try {
-			const folders = await invoke<string[]>("add_watched_folder", { path });
-			setWatchedFolders(folders);
+	const handleAddFolder = useCallback(
+		async (path: string) => {
+			await addFolder(path);
 			setSearchValue("");
-		} catch (err) {
-			console.error("Failed to add folder", err);
-			toastManager.add({
-				title: "Failed to add folder",
-				description: String(err),
-				type: "error",
-			});
-		}
-	}, []);
+		},
+		[addFolder]
+	);
 
 	const handleBrowseFolders = useCallback(async () => {
 		try {
-			const selected = await open({
+			const selected = await openFolderPicker({
 				directory: true,
 				multiple: true,
 				title: "Select folders to watch",
@@ -142,55 +195,6 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 			console.error("Failed to open folder picker", err);
 		}
 	}, [addFolder]);
-
-	useEffect(() => {
-		const appWindow = getCurrentWindow();
-		let unlistenEnter: () => void;
-		let unlistenLeave: () => void;
-		let unlistenDrop: () => void;
-
-		const setup = async () => {
-			unlistenEnter = await appWindow.listen("tauri://drag-enter", () => {
-				if (dialogOpenRef.current) {
-					setIsDragOver(true);
-				}
-			});
-			unlistenLeave = await appWindow.listen("tauri://drag-leave", () => {
-				setIsDragOver(false);
-			});
-			unlistenDrop = await appWindow.listen<{ paths: string[] }>("tauri://drag-drop", (event) => {
-				if (!dialogOpenRef.current) return;
-				setIsDragOver(false);
-
-				// The backend add_watched_folder validates that the path is a directory.
-				for (const path of event.payload.paths) {
-					addFolder(path);
-				}
-			});
-		};
-
-		setup();
-		return () => {
-			if (unlistenEnter) unlistenEnter();
-			if (unlistenLeave) unlistenLeave();
-			if (unlistenDrop) unlistenDrop();
-		};
-	}, [addFolder]);
-
-	const removeFolder = async (path: string) => {
-		try {
-			const folders = await invoke<string[]>("remove_watched_folder", { path });
-			setWatchedFolders(folders);
-			setSelectedFolders((prev) => prev.filter((f) => f !== path));
-		} catch (err) {
-			console.error("Failed to remove folder", err);
-			toastManager.add({
-				title: "Failed to remove folder",
-				description: String(err),
-				type: "error",
-			});
-		}
-	};
 
 	const removeSelectedFolders = async () => {
 		for (const folder of selectedFolders) {
@@ -231,19 +235,28 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 	const selectedTheme = themeItems.find((t) => t.value === theme) ?? themeItems[0];
 
 	return (
-		<Dialog onOpenChange={handleOpenChange}>
-			<DialogTrigger
-				render={<Toggle pressed={false} variant="outline" size="sm" aria-label="Settings" />}
-			>
-				<Tuning2Linear />
-			</DialogTrigger>
+		<Dialog open={open} onOpenChange={handleOpenChange}>
+			{open === undefined && (
+				<DialogTrigger
+					render={<Toggle pressed={false} variant="outline" size="sm" aria-label="Settings" />}
+				>
+					<Tuning2Linear />
+				</DialogTrigger>
+			)}
 			<DialogPopup className="h-112 max-w-2xl">
 				<DialogHeader>
 					<DialogTitle>Settings</DialogTitle>
 					<DialogDescription>Configure compression and appearance.</DialogDescription>
 				</DialogHeader>
 				<DialogPanel>
-					<Tabs defaultValue="compression" orientation="vertical">
+					<Tabs
+						value={activeTab}
+						onValueChange={(val) => {
+							setActiveTab(val);
+							activeTabRef.current = val;
+						}}
+						orientation="vertical"
+					>
 						<div className="border-s">
 							<TabsList variant="underline">
 								<TabsTab value="compression">Compression</TabsTab>
@@ -309,7 +322,7 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 									<Button
 										variant="outline"
 										size="sm"
-										onClick={() => addFolder(searchValue)}
+										onClick={() => handleAddFolder(searchValue)}
 										disabled={!searchValue}
 									>
 										<AddFolderLinear className="mr-1.5 size-4" />
@@ -346,7 +359,7 @@ export function SettingsDialog({ onOpenChange }: SettingsDialogProps) {
 													/>
 													<span className="font-medium text-xs">Select All</span>
 												</label>
-												{watchedFolders.map((folder, index) => (
+												{watchedFolders.map((folder: string, index: number) => (
 													<label
 														htmlFor={`settings-folder-${index}`}
 														key={folder}

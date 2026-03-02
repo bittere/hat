@@ -55,6 +55,7 @@ pub fn run() {
             commands::set_show_system_notifications,
             commands::get_format_options,
             commands::set_format_options,
+            commands::quit_app,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
