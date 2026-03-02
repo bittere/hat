@@ -10,6 +10,7 @@ import { useDownloadsWatcher } from "@/hooks/use-downloads-watcher";
 import { useWatchedFolders } from "@/hooks/use-watched-folders";
 import { quitApp } from "@/lib/commands";
 import { extractFileName } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import "./App.css";
 
 function App() {
@@ -49,8 +50,13 @@ function App() {
 
 	useDownloadsWatcher(handleNewDownload);
 
+	const isCompressing = history.some((r) => r.status === "processing");
+	const hasError = history.some((r) => r.status === "failed");
+
+	const status = isCompressing ? "compressing" : hasError ? "error" : "idle";
+
 	return (
-		<div className="flex h-screen bg-background">
+		<div className="flex h-screen bg-background text-foreground">
 			<DragOverlay onDrop={handleManualDrop} />
 			<div className="fixed top-4 left-4 z-50">
 				<Button variant="ghost" size="icon-xl" onClick={() => setSidebarOpen(!sidebarOpen)}>
@@ -60,6 +66,21 @@ function App() {
 			<Sidebar open={sidebarOpen} history={history} />
 			<main className="relative flex min-w-0 flex-1 items-center justify-center">
 				<img src="/app-icon.svg" className="size-48" alt="Hat" />
+				<div className="absolute bottom-6 left-6 flex items-center gap-2">
+					<div
+						className={cn(
+							"size-2 rounded-full transition-colors duration-300",
+							status === "compressing" && "bg-info animate-status-pulse",
+							status === "error" && "bg-destructive",
+							status === "idle" && "bg-success"
+						)}
+					/>
+					<span className="text-xs font-medium text-muted-foreground/80">
+						{status === "compressing" && "Compressing..."}
+						{status === "error" && "Error!"}
+						{status === "idle" && "Watching..."}
+					</span>
+				</div>
 				<div className="absolute right-4 bottom-4 flex items-center gap-1">
 					<Button variant="ghost" size="icon-xl" onClick={() => quitApp()}>
 						<PowerLinear className="size-6" />
