@@ -1,4 +1,6 @@
-use crate::compression::{compressed_output_path, CompressionRecord, ImageFormat, Vips};
+use crate::compression::{
+    compressed_output_path, CompressionFlags, CompressionRecord, ImageFormat, Vips,
+};
 use log::{error, info};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -45,7 +47,7 @@ pub fn process_file(
     }
 
     let initial_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let (original_quality, png_palette, convert_to) = app
+    let (original_quality, flags, convert_to) = app
         .state::<Mutex<crate::config::ConfigManager>>()
         .lock()
         .map(|c| {
@@ -53,11 +55,66 @@ pub fn process_file(
             let (quality, convert_to_str) = match format {
                 ImageFormat::Png => (opts.png.quality, opts.png.convert_to.clone()),
                 ImageFormat::Jpeg => (opts.jpeg.quality, opts.jpeg.convert_to.clone()),
+                ImageFormat::WebP => (opts.webp.quality, opts.webp.convert_to.clone()),
+                ImageFormat::Avif => (opts.avif.quality, opts.avif.convert_to.clone()),
+                ImageFormat::Heif => (opts.heif.quality, opts.heif.convert_to.clone()),
+                ImageFormat::Tiff => (opts.tiff.quality, opts.tiff.convert_to.clone()),
             };
             let target = convert_to_str.and_then(|s| ImageFormat::from_extension(&s));
-            (quality, opts.png.palette, target)
+            let effective = target.unwrap_or(format);
+            let flags = match effective {
+                ImageFormat::Png => CompressionFlags {
+                    png_palette: opts.png.palette,
+                    png_interlace: opts.png.interlace,
+                    png_bitdepth: opts.png.bitdepth,
+                    png_filter: opts.png.filter.clone(),
+                    ..Default::default()
+                },
+                ImageFormat::Jpeg => CompressionFlags {
+                    jpeg_optimize_coding: opts.jpeg.optimize_coding,
+                    jpeg_interlace: opts.jpeg.interlace,
+                    jpeg_subsample_mode: opts.jpeg.subsample_mode.clone(),
+                    jpeg_trellis_quant: opts.jpeg.trellis_quant,
+                    jpeg_overshoot_deringing: opts.jpeg.overshoot_deringing,
+                    ..Default::default()
+                },
+                ImageFormat::WebP => CompressionFlags {
+                    webp_effort: opts.webp.effort,
+                    webp_lossless: opts.webp.lossless,
+                    webp_near_lossless: opts.webp.near_lossless,
+                    webp_smart_subsample: opts.webp.smart_subsample,
+                    webp_alpha_q: opts.webp.alpha_q,
+                    ..Default::default()
+                },
+                ImageFormat::Avif => CompressionFlags {
+                    avif_effort: opts.avif.effort,
+                    avif_lossless: opts.avif.lossless,
+                    avif_bitdepth: opts.avif.bitdepth,
+                    avif_subsample_mode: opts.avif.subsample_mode.clone(),
+                    ..Default::default()
+                },
+                ImageFormat::Heif => CompressionFlags {
+                    heif_effort: opts.heif.effort,
+                    heif_lossless: opts.heif.lossless,
+                    heif_bitdepth: opts.heif.bitdepth,
+                    ..Default::default()
+                },
+                ImageFormat::Tiff => CompressionFlags {
+                    tiff_compression: opts.tiff.compression.clone(),
+                    tiff_predictor: opts.tiff.predictor.clone(),
+                    tiff_tile: opts.tiff.tile,
+                    tiff_pyramid: opts.tiff.pyramid,
+                    tiff_bitdepth: opts.tiff.bitdepth,
+                    ..Default::default()
+                },
+            };
+            (quality, flags, target)
         })
-        .unwrap_or((crate::DEFAULT_QUALITY, false, None::<ImageFormat>));
+        .unwrap_or((
+            crate::DEFAULT_QUALITY,
+            CompressionFlags::default(),
+            None::<ImageFormat>,
+        ));
 
     let target_ext = convert_to.map(|f| f.extension());
     let output = compressed_output_path(path, target_ext)
@@ -84,7 +141,7 @@ pub fn process_file(
     const QUALITY_STEP: u8 = 10;
 
     for attempt in 0..=MAX_RETRIES {
-        match vips.compress(path, &output, current_quality, png_palette, convert_to) {
+        match vips.compress(path, &output, current_quality, &flags, convert_to) {
             Ok(size) => {
                 compressed_size = size;
                 if size <= initial_size || current_quality >= 100 {

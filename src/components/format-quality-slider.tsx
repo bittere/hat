@@ -4,13 +4,21 @@ interface FormatQualitySliderProps {
 	label: string;
 	value: number;
 	onValueChange: (value: number) => void;
+	min?: number;
+	max?: number;
 }
 
-export function FormatQualitySlider({ label, value, onValueChange }: FormatQualitySliderProps) {
+export function FormatQualitySlider({
+	label,
+	value,
+	onValueChange,
+	min = 1,
+	max = 100,
+}: FormatQualitySliderProps) {
 	return (
 		<Slider
-			min={1}
-			max={100}
+			min={min}
+			max={max}
 			value={value}
 			onValueChange={(val) => {
 				if (typeof val === "number") {

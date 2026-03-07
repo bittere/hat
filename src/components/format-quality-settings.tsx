@@ -1,8 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FormatQualitySlider } from "@/components/format-quality-slider";
-import { FORMAT_LABELS, type FormatKey, FormatSelect } from "@/components/format-select";
-import { SettingsSwitch } from "@/components/ui/settings-switch";
+import { AvifPanel } from "@/components/format-panels/avif-panel";
+import { HeifPanel } from "@/components/format-panels/heif-panel";
+import { JpegPanel } from "@/components/format-panels/jpeg-panel";
+import { PngPanel } from "@/components/format-panels/png-panel";
+import { TiffPanel } from "@/components/format-panels/tiff-panel";
+import { WebpPanel } from "@/components/format-panels/webp-panel";
+import { FORMAT_LABELS, type FormatKey } from "@/components/format-select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import type { FormatOptions } from "@/lib/types";
 
@@ -36,21 +41,11 @@ export function FormatQualitySettings() {
 		[updateOptions]
 	);
 
-	const handlePaletteChange = useCallback(
-		(value: boolean) => {
+	const updateField = useCallback(
+		<K extends FormatKey>(key: K, field: string, value: unknown) => {
 			updateOptions((prev) => ({
 				...prev,
-				png: { ...prev.png, palette: value },
-			}));
-		},
-		[updateOptions]
-	);
-
-	const handleConvertToChange = useCallback(
-		(key: FormatKey, value: string | null) => {
-			updateOptions((prev) => ({
-				...prev,
-				[key]: { ...prev[key], convert_to: value },
+				[key]: { ...prev[key], [field]: value },
 			}));
 		},
 		[updateOptions]
@@ -69,37 +64,66 @@ export function FormatQualitySettings() {
 					))}
 				</TabsList>
 			</div>
-			{FORMAT_LABELS.map(({ key }) => (
-				<TabsPanel key={key} value={key}>
-					<div className="space-y-3">
-						<FormatQualitySlider
-							label="Quality"
-							value={formatOptions[key].quality}
-							onValueChange={(val) => handleQualityChange(key, val)}
-						/>
-						{key === "png" && (
-							<SettingsSwitch
-								checked={formatOptions.png.palette && formatOptions.png.convert_to === null}
-								onCheckedChange={handlePaletteChange}
-								title="Palette"
-								description="Reduce to 256 colors for smaller file sizes. Best for graphics and icons."
-								disabled={formatOptions.png.convert_to !== null}
-							/>
-						)}
-						<div className="flex flex-col items-start gap-1.5">
-							<label htmlFor={`convert-to-${key}`} className="font-medium text-foreground text-sm">
-								Convert to
-							</label>
-							<FormatSelect
-								id={`convert-to-${key}`}
-								value={formatOptions[key].convert_to}
-								onValueChange={(val) => handleConvertToChange(key, val)}
-								hideFormat={key}
-							/>
-						</div>
-					</div>
-				</TabsPanel>
-			))}
+
+			<TabsPanel value="jpeg" className="overflow-hidden">
+				<ScrollArea scrollFade className="max-h-[40vh]">
+					<JpegPanel
+						config={formatOptions.jpeg}
+						onQualityChange={(val) => handleQualityChange("jpeg", val)}
+						onFieldChange={(field, val) => updateField("jpeg", field, val)}
+					/>
+				</ScrollArea>
+			</TabsPanel>
+
+			<TabsPanel value="png" className="overflow-hidden">
+				<ScrollArea scrollFade className="max-h-[40vh]">
+					<PngPanel
+						config={formatOptions.png}
+						onQualityChange={(val) => handleQualityChange("png", val)}
+						onFieldChange={(field, val) => updateField("png", field, val)}
+					/>
+				</ScrollArea>
+			</TabsPanel>
+
+			<TabsPanel value="webp" className="overflow-hidden">
+				<ScrollArea scrollFade className="max-h-[40vh]">
+					<WebpPanel
+						config={formatOptions.webp}
+						onQualityChange={(val) => handleQualityChange("webp", val)}
+						onFieldChange={(field, val) => updateField("webp", field, val)}
+					/>
+				</ScrollArea>
+			</TabsPanel>
+
+			<TabsPanel value="avif" className="overflow-hidden">
+				<ScrollArea scrollFade className="max-h-[40vh]">
+					<AvifPanel
+						config={formatOptions.avif}
+						onQualityChange={(val) => handleQualityChange("avif", val)}
+						onFieldChange={(field, val) => updateField("avif", field, val)}
+					/>
+				</ScrollArea>
+			</TabsPanel>
+
+			<TabsPanel value="heif" className="overflow-hidden">
+				<ScrollArea scrollFade className="max-h-[40vh]">
+					<HeifPanel
+						config={formatOptions.heif}
+						onQualityChange={(val) => handleQualityChange("heif", val)}
+						onFieldChange={(field, val) => updateField("heif", field, val)}
+					/>
+				</ScrollArea>
+			</TabsPanel>
+
+			<TabsPanel value="tiff" className="overflow-hidden">
+				<ScrollArea scrollFade className="max-h-[40vh]">
+					<TiffPanel
+						config={formatOptions.tiff}
+						onQualityChange={(val) => handleQualityChange("tiff", val)}
+						onFieldChange={(field, val) => updateField("tiff", field, val)}
+					/>
+				</ScrollArea>
+			</TabsPanel>
 		</Tabs>
 	);
 }

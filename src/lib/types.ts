@@ -31,18 +31,67 @@ export interface CompressionRetry {
 	compressed_size: number;
 }
 
-export interface FormatConfig {
-	quality: number;
-	convert_to: string | null;
-}
-
 export interface PngConfig {
 	quality: number;
 	palette: boolean;
 	convert_to: string | null;
+	interlace: boolean;
+	bitdepth: number;
+	filter: string | null;
+}
+
+export interface JpegConfig {
+	quality: number;
+	convert_to: string | null;
+	optimize_coding: boolean;
+	interlace: boolean;
+	subsample_mode: string | null;
+	trellis_quant: boolean;
+	overshoot_deringing: boolean;
+}
+
+export interface WebpConfig {
+	quality: number;
+	convert_to: string | null;
+	effort: number;
+	lossless: boolean;
+	near_lossless: boolean;
+	smart_subsample: boolean;
+	alpha_q: number;
+}
+
+export interface AvifConfig {
+	quality: number;
+	convert_to: string | null;
+	effort: number;
+	lossless: boolean;
+	bitdepth: number;
+	subsample_mode: string | null;
+}
+
+export interface HeifConfig {
+	quality: number;
+	convert_to: string | null;
+	effort: number;
+	lossless: boolean;
+	bitdepth: number;
+}
+
+export interface TiffConfig {
+	quality: number;
+	convert_to: string | null;
+	compression: string | null;
+	predictor: string | null;
+	tile: boolean;
+	pyramid: boolean;
+	bitdepth: number;
 }
 
 export interface FormatOptions {
 	png: PngConfig;
-	jpeg: FormatConfig;
+	jpeg: JpegConfig;
+	webp: WebpConfig;
+	avif: AvifConfig;
+	heif: HeifConfig;
+	tiff: TiffConfig;
 }

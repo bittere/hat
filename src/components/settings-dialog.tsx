@@ -4,6 +4,7 @@ import type { Event } from "@tauri-apps/api/event";
 import { type DragDropEvent, getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openFolderPicker } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ConversionSettings } from "@/components/conversion-settings";
 import { Dropzone } from "@/components/dropzone";
 import { FormatQualitySettings } from "@/components/format-quality-settings";
 import { useTheme } from "@/components/theme-provider";
@@ -243,12 +244,12 @@ export function SettingsDialog({
 					<Tuning2Linear />
 				</DialogTrigger>
 			)}
-			<DialogPopup className="h-112 max-w-2xl">
+			<DialogPopup className="h-[80vh] min-w-[60vw]">
 				<DialogHeader>
 					<DialogTitle>Settings</DialogTitle>
 					<DialogDescription>Configure compression and appearance.</DialogDescription>
 				</DialogHeader>
-				<DialogPanel>
+				<DialogPanel className="h-full">
 					<Tabs
 						value={activeTab}
 						onValueChange={(val) => {
@@ -256,10 +257,12 @@ export function SettingsDialog({
 							activeTabRef.current = val;
 						}}
 						orientation="vertical"
+						className="h-full"
 					>
 						<div className="border-s">
 							<TabsList variant="underline">
 								<TabsTab value="compression">Compression</TabsTab>
+								<TabsTab value="conversion">Conversion</TabsTab>
 								<TabsTab value="folders">Folders</TabsTab>
 								<TabsTab value="appearance">Appearance</TabsTab>
 								<TabsTab value="notifications">Notifications</TabsTab>
@@ -269,6 +272,11 @@ export function SettingsDialog({
 						{/* Compression Tab */}
 						<TabsPanel value="compression">
 							<FormatQualitySettings />
+						</TabsPanel>
+
+						{/* Conversion Tab */}
+						<TabsPanel value="conversion">
+							<ConversionSettings />
 						</TabsPanel>
 
 						{/* Folders Tab */}
@@ -395,7 +403,7 @@ export function SettingsDialog({
 						{/* Appearance Tab */}
 						<TabsPanel value="appearance">
 							<div className="space-y-4">
-								<div className="flex flex-col gap-1.5">
+								<div className="flex flex-col items-start gap-1.5">
 									<label
 										htmlFor="settings-theme-select"
 										className="font-medium text-foreground text-sm"

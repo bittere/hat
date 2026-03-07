@@ -2,11 +2,15 @@ import type { VariantProps } from "class-variance-authority";
 import type { selectTriggerVariants } from "@/components/ui/select";
 import { Select, SelectItem, SelectPopup, SelectTrigger } from "@/components/ui/select";
 
-export type FormatKey = "jpeg" | "png";
+export type FormatKey = "jpeg" | "png" | "webp" | "avif" | "heif" | "tiff";
 
 export const FORMAT_LABELS: { key: FormatKey; label: string }[] = [
 	{ key: "jpeg", label: "JPEG" },
 	{ key: "png", label: "PNG" },
+	{ key: "webp", label: "WebP" },
+	{ key: "avif", label: "AVIF" },
+	{ key: "heif", label: "HEIF" },
+	{ key: "tiff", label: "TIFF" },
 ];
 
 interface FormatSelectProps {

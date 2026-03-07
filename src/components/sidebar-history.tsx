@@ -158,7 +158,10 @@ function ThumbnailBox({ item }: { item: CompressionRecord }) {
 				<TooltipTrigger
 					render={
 						showPlaceholder ? (
-							<div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted">
+							<div
+								title={fileName}
+								className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted"
+							>
 								<ForbiddenCircleLinear className="size-3.5 text-muted-foreground" />
 							</div>
 						) : (
@@ -188,11 +191,11 @@ function ThumbnailBox({ item }: { item: CompressionRecord }) {
 						<DialogHeader>
 							<DialogTitle className="truncate text-base">{fileName}</DialogTitle>
 						</DialogHeader>
-						<div className="px-6">
+						<div className="flex justify-center px-6 pb-6">
 							<img
 								src={convertFileSrc(item.initial_path)}
 								alt={fileName}
-								className="max-h-[70vh] max-w-[70vw] rounded-lg object-contain"
+								className="max-h-[60vh] max-w-[60vw] rounded-lg object-contain"
 							/>
 						</div>
 						<DialogFooter>

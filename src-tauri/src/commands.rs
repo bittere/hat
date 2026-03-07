@@ -1,4 +1,6 @@
-use crate::compression::{compressed_output_path, CompressionRecord, ImageFormat};
+use crate::compression::{
+    compressed_output_path, CompressionFlags, CompressionRecord, ImageFormat,
+};
 use crate::watcher::VipsState;
 use log::{error, info};
 use notify::Watcher;
@@ -134,14 +136,62 @@ pub fn recompress(
         },
     );
 
-    let png_palette = app
+    let flags = app
         .state::<Mutex<crate::config::ConfigManager>>()
         .lock()
-        .map(|c| c.config.format_options.png.palette)
-        .unwrap_or(false);
+        .map(|c| {
+            let opts = &c.config.format_options;
+            match format {
+                ImageFormat::Png => CompressionFlags {
+                    png_palette: opts.png.palette,
+                    png_interlace: opts.png.interlace,
+                    png_bitdepth: opts.png.bitdepth,
+                    png_filter: opts.png.filter.clone(),
+                    ..Default::default()
+                },
+                ImageFormat::Jpeg => CompressionFlags {
+                    jpeg_optimize_coding: opts.jpeg.optimize_coding,
+                    jpeg_interlace: opts.jpeg.interlace,
+                    jpeg_subsample_mode: opts.jpeg.subsample_mode.clone(),
+                    jpeg_trellis_quant: opts.jpeg.trellis_quant,
+                    jpeg_overshoot_deringing: opts.jpeg.overshoot_deringing,
+                    ..Default::default()
+                },
+                ImageFormat::WebP => CompressionFlags {
+                    webp_effort: opts.webp.effort,
+                    webp_lossless: opts.webp.lossless,
+                    webp_near_lossless: opts.webp.near_lossless,
+                    webp_smart_subsample: opts.webp.smart_subsample,
+                    webp_alpha_q: opts.webp.alpha_q,
+                    ..Default::default()
+                },
+                ImageFormat::Avif => CompressionFlags {
+                    avif_effort: opts.avif.effort,
+                    avif_lossless: opts.avif.lossless,
+                    avif_bitdepth: opts.avif.bitdepth,
+                    avif_subsample_mode: opts.avif.subsample_mode.clone(),
+                    ..Default::default()
+                },
+                ImageFormat::Heif => CompressionFlags {
+                    heif_effort: opts.heif.effort,
+                    heif_lossless: opts.heif.lossless,
+                    heif_bitdepth: opts.heif.bitdepth,
+                    ..Default::default()
+                },
+                ImageFormat::Tiff => CompressionFlags {
+                    tiff_compression: opts.tiff.compression.clone(),
+                    tiff_predictor: opts.tiff.predictor.clone(),
+                    tiff_tile: opts.tiff.tile,
+                    tiff_pyramid: opts.tiff.pyramid,
+                    tiff_bitdepth: opts.tiff.bitdepth,
+                    ..Default::default()
+                },
+            }
+        })
+        .unwrap_or_default();
 
     let quality: u8 = previous_quality.saturating_add(10).min(100);
-    let compressed_size = match vips.compress(input, &output, quality, png_palette, None) {
+    let compressed_size = match vips.compress(input, &output, quality, &flags, None) {
         Ok(s) => s,
         Err(e) => {
             let err_msg = e.to_string();
@@ -226,33 +276,83 @@ pub fn convert_image(
     );
 
     let config = app.state::<Mutex<crate::config::ConfigManager>>();
-    let (quality, png_palette) = config
+    let (quality, flags) = config
         .lock()
         .map(|c| {
+            let opts = &c.config.format_options;
             let q = match dest_format {
-                ImageFormat::Png => c.config.format_options.png.quality,
-                ImageFormat::Jpeg => c.config.format_options.jpeg.quality,
+                ImageFormat::Png => opts.png.quality,
+                ImageFormat::Jpeg => opts.jpeg.quality,
+                ImageFormat::WebP => opts.webp.quality,
+                ImageFormat::Avif => opts.avif.quality,
+                ImageFormat::Heif => opts.heif.quality,
+                ImageFormat::Tiff => opts.tiff.quality,
             };
-            (q, c.config.format_options.png.palette)
+            let flags = match dest_format {
+                ImageFormat::Png => CompressionFlags {
+                    png_palette: opts.png.palette,
+                    png_interlace: opts.png.interlace,
+                    png_bitdepth: opts.png.bitdepth,
+                    png_filter: opts.png.filter.clone(),
+                    ..Default::default()
+                },
+                ImageFormat::Jpeg => CompressionFlags {
+                    jpeg_optimize_coding: opts.jpeg.optimize_coding,
+                    jpeg_interlace: opts.jpeg.interlace,
+                    jpeg_subsample_mode: opts.jpeg.subsample_mode.clone(),
+                    jpeg_trellis_quant: opts.jpeg.trellis_quant,
+                    jpeg_overshoot_deringing: opts.jpeg.overshoot_deringing,
+                    ..Default::default()
+                },
+                ImageFormat::WebP => CompressionFlags {
+                    webp_effort: opts.webp.effort,
+                    webp_lossless: opts.webp.lossless,
+                    webp_near_lossless: opts.webp.near_lossless,
+                    webp_smart_subsample: opts.webp.smart_subsample,
+                    webp_alpha_q: opts.webp.alpha_q,
+                    ..Default::default()
+                },
+                ImageFormat::Avif => CompressionFlags {
+                    avif_effort: opts.avif.effort,
+                    avif_lossless: opts.avif.lossless,
+                    avif_bitdepth: opts.avif.bitdepth,
+                    avif_subsample_mode: opts.avif.subsample_mode.clone(),
+                    ..Default::default()
+                },
+                ImageFormat::Heif => CompressionFlags {
+                    heif_effort: opts.heif.effort,
+                    heif_lossless: opts.heif.lossless,
+                    heif_bitdepth: opts.heif.bitdepth,
+                    ..Default::default()
+                },
+                ImageFormat::Tiff => CompressionFlags {
+                    tiff_compression: opts.tiff.compression.clone(),
+                    tiff_predictor: opts.tiff.predictor.clone(),
+                    tiff_tile: opts.tiff.tile,
+                    tiff_pyramid: opts.tiff.pyramid,
+                    tiff_bitdepth: opts.tiff.bitdepth,
+                    ..Default::default()
+                },
+            };
+            (q, flags)
         })
-        .unwrap_or((crate::DEFAULT_QUALITY, false));
+        .unwrap_or((crate::DEFAULT_QUALITY, CompressionFlags::default()));
 
-    let compressed_size =
-        match vips.compress(input, &output, quality, png_palette, Some(dest_format)) {
-            Ok(s) => s,
-            Err(e) => {
-                let err_msg = e.to_string();
-                let _ = app.emit(
-                    "compression-failed",
-                    &crate::processor::CompressionFailed {
-                        initial_path: path.clone(),
-                        timestamp,
-                        error: err_msg.clone(),
-                    },
-                );
-                return Err(err_msg);
-            }
-        };
+    let compressed_size = match vips.compress(input, &output, quality, &flags, Some(dest_format)) {
+        Ok(s) => s,
+        Err(e) => {
+            let err_msg = e.to_string();
+            let _ = app.emit(
+                "compression-failed",
+                &crate::processor::CompressionFailed {
+                    initial_path: path.clone(),
+                    timestamp,
+                    error: err_msg.clone(),
+                },
+            );
+            return Err(err_msg);
+        }
+    };
 
     let record = CompressionRecord {
         initial_path: path.clone(),

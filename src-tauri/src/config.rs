@@ -3,25 +3,168 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct FormatConfig {
-    pub quality: u8,
-    #[serde(default)]
-    pub convert_to: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PngConfig {
     pub quality: u8,
     #[serde(default)]
     pub palette: bool,
     #[serde(default)]
     pub convert_to: Option<String>,
+    #[serde(default)]
+    pub interlace: bool,
+    #[serde(default)]
+    pub bitdepth: u8,
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct JpegConfig {
+    pub quality: u8,
+    #[serde(default)]
+    pub convert_to: Option<String>,
+    #[serde(default = "default_true")]
+    pub optimize_coding: bool,
+    #[serde(default)]
+    pub interlace: bool,
+    #[serde(default)]
+    pub subsample_mode: Option<String>,
+    #[serde(default)]
+    pub trellis_quant: bool,
+    #[serde(default)]
+    pub overshoot_deringing: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WebpConfig {
+    pub quality: u8,
+    #[serde(default)]
+    pub convert_to: Option<String>,
+    #[serde(default = "default_effort_4")]
+    pub effort: u8,
+    #[serde(default)]
+    pub lossless: bool,
+    #[serde(default)]
+    pub near_lossless: bool,
+    #[serde(default)]
+    pub smart_subsample: bool,
+    #[serde(default = "default_alpha_q")]
+    pub alpha_q: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AvifConfig {
+    pub quality: u8,
+    #[serde(default)]
+    pub convert_to: Option<String>,
+    #[serde(default = "default_effort_4")]
+    pub effort: u8,
+    #[serde(default)]
+    pub lossless: bool,
+    #[serde(default)]
+    pub bitdepth: u8,
+    #[serde(default)]
+    pub subsample_mode: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HeifConfig {
+    pub quality: u8,
+    #[serde(default)]
+    pub convert_to: Option<String>,
+    #[serde(default = "default_effort_4")]
+    pub effort: u8,
+    #[serde(default)]
+    pub lossless: bool,
+    #[serde(default)]
+    pub bitdepth: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TiffConfig {
+    pub quality: u8,
+    #[serde(default)]
+    pub convert_to: Option<String>,
+    #[serde(default)]
+    pub compression: Option<String>,
+    #[serde(default)]
+    pub predictor: Option<String>,
+    #[serde(default)]
+    pub tile: bool,
+    #[serde(default)]
+    pub pyramid: bool,
+    #[serde(default)]
+    pub bitdepth: u8,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_effort_4() -> u8 {
+    4
+}
+
+fn default_alpha_q() -> u8 {
+    100
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FormatOptions {
     pub png: PngConfig,
-    pub jpeg: FormatConfig,
+    pub jpeg: JpegConfig,
+    #[serde(default = "default_webp_config")]
+    pub webp: WebpConfig,
+    #[serde(default = "default_avif_config")]
+    pub avif: AvifConfig,
+    #[serde(default = "default_heif_config")]
+    pub heif: HeifConfig,
+    #[serde(default = "default_tiff_config")]
+    pub tiff: TiffConfig,
+}
+
+fn default_webp_config() -> WebpConfig {
+    WebpConfig {
+        quality: crate::DEFAULT_QUALITY,
+        convert_to: None,
+        effort: 4,
+        lossless: false,
+        near_lossless: false,
+        smart_subsample: false,
+        alpha_q: 100,
+    }
+}
+
+fn default_avif_config() -> AvifConfig {
+    AvifConfig {
+        quality: crate::DEFAULT_QUALITY,
+        convert_to: None,
+        effort: 4,
+        lossless: false,
+        bitdepth: 0,
+        subsample_mode: None,
+    }
+}
+
+fn default_heif_config() -> HeifConfig {
+    HeifConfig {
+        quality: crate::DEFAULT_QUALITY,
+        convert_to: None,
+        effort: 4,
+        lossless: false,
+        bitdepth: 0,
+    }
+}
+
+fn default_tiff_config() -> TiffConfig {
+    TiffConfig {
+        quality: crate::DEFAULT_QUALITY,
+        convert_to: None,
+        compression: None,
+        predictor: None,
+        tile: false,
+        pyramid: false,
+        bitdepth: 0,
+    }
 }
 
 impl Default for FormatOptions {
@@ -32,11 +175,23 @@ impl Default for FormatOptions {
                 quality: q,
                 palette: false,
                 convert_to: None,
+                interlace: false,
+                bitdepth: 0,
+                filter: None,
             },
-            jpeg: FormatConfig {
+            jpeg: JpegConfig {
                 quality: q,
                 convert_to: None,
+                optimize_coding: true,
+                interlace: false,
+                subsample_mode: None,
+                trellis_quant: false,
+                overshoot_deringing: false,
             },
+            webp: default_webp_config(),
+            avif: default_avif_config(),
+            heif: default_heif_config(),
+            tiff: default_tiff_config(),
         }
     }
 }

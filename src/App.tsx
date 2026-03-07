@@ -70,12 +70,12 @@ function App() {
 					<div
 						className={cn(
 							"size-2 rounded-full transition-colors duration-300",
-							status === "compressing" && "bg-info animate-status-pulse",
+							status === "compressing" && "animate-status-pulse bg-info",
 							status === "error" && "bg-destructive",
 							status === "idle" && "bg-success"
 						)}
 					/>
-					<span className="text-xs font-medium text-muted-foreground/80">
+					<span className="font-medium text-muted-foreground/80 text-xs">
 						{status === "compressing" && "Compressing..."}
 						{status === "error" && "Error!"}
 						{status === "idle" && "Watching..."}

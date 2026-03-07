@@ -15,6 +15,10 @@ use std::path::Path;
 pub enum ImageFormat {
     Png,
     Jpeg,
+    WebP,
+    Avif,
+    Heif,
+    Tiff,
 }
 
 impl ImageFormat {
@@ -22,6 +26,10 @@ impl ImageFormat {
         match ext.to_ascii_lowercase().as_str() {
             "png" => Some(Self::Png),
             "jpg" | "jpeg" => Some(Self::Jpeg),
+            "webp" => Some(Self::WebP),
+            "avif" => Some(Self::Avif),
+            "heif" | "heic" => Some(Self::Heif),
+            "tif" | "tiff" => Some(Self::Tiff),
             _ => None,
         }
     }
@@ -36,6 +44,10 @@ impl ImageFormat {
         match self {
             Self::Png => "png",
             Self::Jpeg => "jpg",
+            Self::WebP => "webp",
+            Self::Avif => "avif",
+            Self::Heif => "heic",
+            Self::Tiff => "tiff",
         }
     }
 }
@@ -45,6 +57,10 @@ impl std::fmt::Display for ImageFormat {
         match self {
             Self::Png => write!(f, "png"),
             Self::Jpeg => write!(f, "jpeg"),
+            Self::WebP => write!(f, "webp"),
+            Self::Avif => write!(f, "avif"),
+            Self::Heif => write!(f, "heif"),
+            Self::Tiff => write!(f, "tiff"),
         }
     }
 }
@@ -107,6 +123,46 @@ type VipsWriteToFileFn = unsafe extern "C" fn(*mut c_void, *const c_char, ...) -
 type GObjectUnrefFn = unsafe extern "C" fn(*mut c_void);
 type VipsErrorBufferFn = unsafe extern "C" fn() -> *const c_char;
 type VipsErrorClearFn = unsafe extern "C" fn();
+
+// ---------------------------------------------------------------------------
+// Format-specific compression flags
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default)]
+pub struct CompressionFlags {
+    // PNG
+    pub png_palette: bool,
+    pub png_interlace: bool,
+    pub png_bitdepth: u8,
+    pub png_filter: Option<String>,
+    // JPEG
+    pub jpeg_optimize_coding: bool,
+    pub jpeg_interlace: bool,
+    pub jpeg_subsample_mode: Option<String>,
+    pub jpeg_trellis_quant: bool,
+    pub jpeg_overshoot_deringing: bool,
+    // WebP
+    pub webp_effort: u8,
+    pub webp_lossless: bool,
+    pub webp_near_lossless: bool,
+    pub webp_smart_subsample: bool,
+    pub webp_alpha_q: u8,
+    // AVIF
+    pub avif_effort: u8,
+    pub avif_lossless: bool,
+    pub avif_bitdepth: u8,
+    pub avif_subsample_mode: Option<String>,
+    // HEIF
+    pub heif_effort: u8,
+    pub heif_lossless: bool,
+    pub heif_bitdepth: u8,
+    // TIFF
+    pub tiff_compression: Option<String>,
+    pub tiff_predictor: Option<String>,
+    pub tiff_tile: bool,
+    pub tiff_pyramid: bool,
+    pub tiff_bitdepth: u8,
+}
 
 // ---------------------------------------------------------------------------
 // Minimal libvips FFI wrapper
@@ -207,7 +263,7 @@ impl Vips {
         input: &Path,
         output: &Path,
         quality: u8,
-        png_palette: bool,
+        flags: &CompressionFlags,
         target_format: Option<ImageFormat>,
     ) -> Result<u64> {
         let format = ImageFormat::from_path(input).ok_or_else(|| {
@@ -229,8 +285,12 @@ impl Vips {
 
         let effective_format = target_format.unwrap_or(format);
         match effective_format {
-            ImageFormat::Png => self.compress_png(input, output, q, png_palette),
-            ImageFormat::Jpeg => self.compress_jpeg(input, output, q),
+            ImageFormat::Png => self.compress_png(input, output, q, flags),
+            ImageFormat::Jpeg => self.compress_jpeg(input, output, q, flags),
+            ImageFormat::WebP => self.compress_webp(input, output, q, flags),
+            ImageFormat::Avif => self.compress_avif(input, output, q, flags),
+            ImageFormat::Heif => self.compress_heif(input, output, q, flags),
+            ImageFormat::Tiff => self.compress_tiff(input, output, q, flags),
         }
     }
 
@@ -243,24 +303,50 @@ impl Vips {
         input: &Path,
         output: &Path,
         quality: u8,
-        palette: bool,
+        flags: &CompressionFlags,
     ) -> Result<u64> {
         let q = quality.clamp(1, 100);
         let ui = 101u8.saturating_sub(q);
         let compression = ((ui as f32 / 100.0) * 9.0).round().clamp(0.0, 9.0) as i32;
 
         let out = output_str(output)?;
-        let suffix = if palette {
-            format!(
-                "{}[compression={},palette,colours=256,Q={},dither=0.5,effort=10,filter=248,strip,bitdepth=8]",
-                out, compression, q,
-            )
+        let filter = flags.png_filter.as_deref().unwrap_or("248");
+        let bitdepth = if flags.png_bitdepth > 0 {
+            flags.png_bitdepth
+        } else if flags.png_palette {
+            8
         } else {
-            format!(
-                "{}[compression={},Q={},effort=10,filter=248,strip,bitdepth=16]",
-                out, compression, q,
-            )
+            16
         };
+
+        let mut parts = if flags.png_palette {
+            vec![
+                format!("compression={}", compression),
+                "palette".to_string(),
+                "colours=256".to_string(),
+                format!("Q={}", q),
+                "dither=0.5".to_string(),
+                "effort=10".to_string(),
+                format!("filter={}", filter),
+                "strip".to_string(),
+                format!("bitdepth={}", bitdepth),
+            ]
+        } else {
+            vec![
+                format!("compression={}", compression),
+                format!("Q={}", q),
+                "effort=10".to_string(),
+                format!("filter={}", filter),
+                "strip".to_string(),
+                format!("bitdepth={}", bitdepth),
+            ]
+        };
+
+        if flags.png_interlace {
+            parts.push("interlace=true".to_string());
+        }
+
+        let suffix = format!("{}[{}]", out, parts.join(","));
 
         info!("[compression] PNG save params: {}", suffix);
         let img = self.load_image(input)?;
@@ -278,13 +364,33 @@ impl Vips {
         Ok(size)
     }
 
-    pub fn compress_jpeg(&self, input: &Path, output: &Path, quality: u8) -> Result<u64> {
+    pub fn compress_jpeg(
+        &self,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        flags: &CompressionFlags,
+    ) -> Result<u64> {
         let q = quality.clamp(1, 100);
-        let suffix = format!(
-            "{}[Q={},strip=true,optimize-coding=true]",
-            output_str(output)?,
-            q,
-        );
+        let mut parts = vec![
+            format!("Q={}", q),
+            "strip=true".to_string(),
+            format!("optimize-coding={}", flags.jpeg_optimize_coding),
+        ];
+        if flags.jpeg_interlace {
+            parts.push("interlace=true".to_string());
+        }
+        if let Some(ref mode) = flags.jpeg_subsample_mode {
+            parts.push(format!("subsample-mode={}", mode));
+        }
+        if flags.jpeg_trellis_quant {
+            parts.push("trellis-quant=true".to_string());
+        }
+        if flags.jpeg_overshoot_deringing {
+            parts.push("overshoot-deringing=true".to_string());
+        }
+
+        let suffix = format!("{}[{}]", output_str(output)?, parts.join(","));
 
         info!("[compression] JPEG save params: {}", suffix);
         let img = self.load_image(input)?;
@@ -293,8 +399,190 @@ impl Vips {
         res?;
 
         let size = fs::metadata(output)?.len();
-        println!(
+        info!(
             "[compression] JPEG {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
+        Ok(size)
+    }
+
+    pub fn compress_webp(
+        &self,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        flags: &CompressionFlags,
+    ) -> Result<u64> {
+        let q = quality.clamp(1, 100);
+        let effort = if flags.webp_effort > 0 {
+            flags.webp_effort
+        } else {
+            4
+        };
+        let mut parts = vec![
+            format!("Q={}", q),
+            format!("effort={}", effort),
+            "strip=true".to_string(),
+        ];
+        if flags.webp_lossless {
+            parts.push("lossless=true".to_string());
+        }
+        if flags.webp_near_lossless {
+            parts.push("near-lossless=true".to_string());
+        }
+        if flags.webp_smart_subsample {
+            parts.push("smart-subsample=true".to_string());
+        }
+        if flags.webp_alpha_q > 0 && flags.webp_alpha_q < 100 {
+            parts.push(format!("alpha-q={}", flags.webp_alpha_q));
+        }
+
+        let suffix = format!("{}[{}]", output_str(output)?, parts.join(","));
+
+        info!("[compression] WebP save params: {}", suffix);
+        let img = self.load_image(input)?;
+        let res = self.save_image(img, &suffix);
+        self.unref(img);
+        res?;
+
+        let size = fs::metadata(output)?.len();
+        info!(
+            "[compression] WebP {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
+        Ok(size)
+    }
+
+    pub fn compress_avif(
+        &self,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        flags: &CompressionFlags,
+    ) -> Result<u64> {
+        let q = quality.clamp(1, 100);
+        let effort = if flags.avif_effort > 0 {
+            flags.avif_effort
+        } else {
+            4
+        };
+        let mut parts = vec![
+            format!("Q={}", q),
+            format!("effort={}", effort),
+            "strip=true".to_string(),
+        ];
+        if flags.avif_lossless {
+            parts.push("lossless=true".to_string());
+        }
+        if flags.avif_bitdepth > 0 {
+            parts.push(format!("bitdepth={}", flags.avif_bitdepth));
+        }
+        if let Some(ref mode) = flags.avif_subsample_mode {
+            parts.push(format!("subsample-mode={}", mode));
+        }
+
+        let suffix = format!("{}[{}]", output_str(output)?, parts.join(","));
+
+        info!("[compression] AVIF save params: {}", suffix);
+        let img = self.load_image(input)?;
+        let res = self.save_image(img, &suffix);
+        self.unref(img);
+        res?;
+
+        let size = fs::metadata(output)?.len();
+        info!(
+            "[compression] AVIF {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
+        Ok(size)
+    }
+
+    pub fn compress_heif(
+        &self,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        flags: &CompressionFlags,
+    ) -> Result<u64> {
+        let q = quality.clamp(1, 100);
+        let effort = if flags.heif_effort > 0 {
+            flags.heif_effort
+        } else {
+            4
+        };
+        let mut parts = vec![
+            format!("Q={}", q),
+            format!("effort={}", effort),
+            "strip=true".to_string(),
+        ];
+        if flags.heif_lossless {
+            parts.push("lossless=true".to_string());
+        }
+        if flags.heif_bitdepth > 0 {
+            parts.push(format!("bitdepth={}", flags.heif_bitdepth));
+        }
+
+        let suffix = format!("{}[{}]", output_str(output)?, parts.join(","));
+
+        info!("[compression] HEIF save params: {}", suffix);
+        let img = self.load_image(input)?;
+        let res = self.save_image(img, &suffix);
+        self.unref(img);
+        res?;
+
+        let size = fs::metadata(output)?.len();
+        info!(
+            "[compression] HEIF {} → {} bytes (q={})",
+            input.display(),
+            size,
+            q
+        );
+        Ok(size)
+    }
+
+    pub fn compress_tiff(
+        &self,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        flags: &CompressionFlags,
+    ) -> Result<u64> {
+        let q = quality.clamp(1, 100);
+        let compression = flags.tiff_compression.as_deref().unwrap_or("deflate");
+        let predictor = flags.tiff_predictor.as_deref().unwrap_or("horizontal");
+        let mut parts = vec![
+            format!("compression={}", compression),
+            format!("Q={}", q),
+            format!("predictor={}", predictor),
+            "strip=true".to_string(),
+        ];
+        if flags.tiff_tile {
+            parts.push("tile=true".to_string());
+        }
+        if flags.tiff_pyramid {
+            parts.push("pyramid=true".to_string());
+        }
+        if flags.tiff_bitdepth > 0 {
+            parts.push(format!("bitdepth={}", flags.tiff_bitdepth));
+        }
+
+        let suffix = format!("{}[{}]", output_str(output)?, parts.join(","));
+
+        info!("[compression] TIFF save params: {}", suffix);
+        let img = self.load_image(input)?;
+        let res = self.save_image(img, &suffix);
+        self.unref(img);
+        res?;
+
+        let size = fs::metadata(output)?.len();
+        info!(
+            "[compression] TIFF {} → {} bytes (q={})",
             input.display(),
             size,
             q
