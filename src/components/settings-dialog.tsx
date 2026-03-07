@@ -244,7 +244,7 @@ export function SettingsDialog({
 					<Tuning2Linear />
 				</DialogTrigger>
 			)}
-			<DialogPopup className="h-[80vh] xs:min-w-screen md:min-w-[60vw]" bottomStickOnMobile={false}>
+			<DialogPopup className="h-[80vh] min-w-2xl lg:min-w-[60vw]" bottomStickOnMobile={false}>
 				<DialogHeader>
 					<DialogTitle>Settings</DialogTitle>
 					<DialogDescription>Configure compression and appearance.</DialogDescription>

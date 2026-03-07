@@ -15,11 +15,10 @@ export function PngPanel({ config, onQualityChange, onFieldChange }: PngPanelPro
 		<div className="space-y-3 pr-8">
 			<FormatQualitySlider label="Quality" value={config.quality} onValueChange={onQualityChange} />
 			<SettingsSwitch
-				checked={config.palette && config.convert_to === null}
+				checked={config.palette}
 				onCheckedChange={(val) => onFieldChange("palette", val)}
 				title="Palette"
 				description="Reduce to 256 colors for smaller file sizes. Best for graphics and icons."
-				disabled={config.convert_to !== null}
 			/>
 			<SettingsSwitch
 				checked={config.interlace}
