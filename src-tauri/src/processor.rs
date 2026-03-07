@@ -52,16 +52,24 @@ pub fn process_file(
         .lock()
         .map(|c| {
             let opts = &c.config.format_options;
-            let (quality, convert_to_str) = match format {
-                ImageFormat::Png => (opts.png.quality, opts.png.convert_to.clone()),
-                ImageFormat::Jpeg => (opts.jpeg.quality, opts.jpeg.convert_to.clone()),
-                ImageFormat::WebP => (opts.webp.quality, opts.webp.convert_to.clone()),
-                ImageFormat::Avif => (opts.avif.quality, opts.avif.convert_to.clone()),
-                ImageFormat::Heif => (opts.heif.quality, opts.heif.convert_to.clone()),
-                ImageFormat::Tiff => (opts.tiff.quality, opts.tiff.convert_to.clone()),
+            let convert_to_str = match format {
+                ImageFormat::Png => opts.png.convert_to.clone(),
+                ImageFormat::Jpeg => opts.jpeg.convert_to.clone(),
+                ImageFormat::WebP => opts.webp.convert_to.clone(),
+                ImageFormat::Avif => opts.avif.convert_to.clone(),
+                ImageFormat::Heif => opts.heif.convert_to.clone(),
+                ImageFormat::Tiff => opts.tiff.convert_to.clone(),
             };
             let target = convert_to_str.and_then(|s| ImageFormat::from_extension(&s));
             let effective = target.unwrap_or(format);
+            let quality = match effective {
+                ImageFormat::Png => opts.png.quality,
+                ImageFormat::Jpeg => opts.jpeg.quality,
+                ImageFormat::WebP => opts.webp.quality,
+                ImageFormat::Avif => opts.avif.quality,
+                ImageFormat::Heif => opts.heif.quality,
+                ImageFormat::Tiff => opts.tiff.quality,
+            };
             let flags = match effective {
                 ImageFormat::Png => CompressionFlags {
                     png_palette: opts.png.palette,
