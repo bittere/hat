@@ -275,13 +275,8 @@ impl Vips {
             )
         })?;
 
-        // The UI sends a "compression level" (1-100) where higher = more compression.
-        // libvips Q is the inverse: higher Q = higher quality = less compression.
-        let q = (101u8.saturating_sub(quality)).clamp(1, 100);
-        info!(
-            "[compression] compression_level={} → libvips Q={}",
-            quality, q
-        );
+        let q = quality.clamp(1, 100);
+        info!("[compression] quality={} → libvips Q={}", quality, q);
 
         let effective_format = target_format.unwrap_or(format);
         match effective_format {
@@ -306,8 +301,10 @@ impl Vips {
         flags: &CompressionFlags,
     ) -> Result<u64> {
         let q = quality.clamp(1, 100);
-        let ui = 101u8.saturating_sub(q);
-        let compression = ((ui as f32 / 100.0) * 9.0).round().clamp(0.0, 9.0) as i32;
+        // Higher quality → less compression effort (lower number)
+        let compression = (((100u8.saturating_sub(q)) as f32 / 100.0) * 9.0)
+            .round()
+            .clamp(0.0, 9.0) as i32;
 
         let out = output_str(output)?;
         let filter = flags.png_filter.as_deref().unwrap_or("248");
