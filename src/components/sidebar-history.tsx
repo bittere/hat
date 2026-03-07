@@ -187,7 +187,7 @@ function ThumbnailBox({ item }: { item: CompressionRecord }) {
 
 			{!showPlaceholder && (
 				<Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-					<DialogPopup className="max-w-fit" bottomStickOnMobile={false}>
+					<DialogPopup className="max-w-fit">
 						<DialogHeader>
 							<DialogTitle className="truncate text-base">{fileName}</DialogTitle>
 						</DialogHeader>
