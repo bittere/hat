@@ -1,9 +1,9 @@
+import { DangerTriangleLinear } from "@solar-icons/react-perf";
 import { FormatQualitySlider } from "@/components/format-quality-slider";
 import { OptionSelect } from "@/components/option-select";
 import { SettingsSwitch } from "@/components/ui/settings-switch";
 import { SUBSAMPLE_OPTIONS } from "@/lib/format-option-constants";
 import type { JpegConfig } from "@/lib/types";
-import { DangerTriangleLinear } from "@solar-icons/react-perf";
 
 interface JpegPanelProps {
 	config: JpegConfig;
