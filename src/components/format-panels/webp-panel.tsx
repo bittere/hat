@@ -44,6 +44,21 @@ export function WebpPanel({ config, onQualityChange, onFieldChange }: WebpPanelP
 				min={1}
 				max={100}
 			/>
+			<SettingsSwitch
+				checked={config.quantize}
+				onCheckedChange={(val) => onFieldChange("quantize", val)}
+				title="Quantize Colors"
+				description="Reduce color palette for better compression. Colors are reduced then re-encoded."
+			/>
+			{config.quantize && (
+				<FormatQualitySlider
+					label="Max Colors"
+					value={config.colors}
+					onValueChange={(val) => onFieldChange("colors", val)}
+					min={2}
+					max={256}
+				/>
+			)}
 		</div>
 	);
 }

@@ -18,8 +18,17 @@ export function PngPanel({ config, onQualityChange, onFieldChange }: PngPanelPro
 				checked={config.palette}
 				onCheckedChange={(val) => onFieldChange("palette", val)}
 				title="Palette"
-				description="Reduce to 256 colors for smaller file sizes. Best for graphics and icons."
+				description="Reduce to indexed colors for smaller file sizes. Best for graphics and icons."
 			/>
+			{config.palette && (
+				<FormatQualitySlider
+					label="Max Colors"
+					value={config.colors}
+					onValueChange={(val) => onFieldChange("colors", val)}
+					min={2}
+					max={256}
+				/>
+			)}
 			<SettingsSwitch
 				checked={config.interlace}
 				onCheckedChange={(val) => onFieldChange("interlace", val)}

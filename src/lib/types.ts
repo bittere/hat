@@ -38,6 +38,7 @@ export interface PngConfig {
 	interlace: boolean;
 	bitdepth: number;
 	filter: string | null;
+	colors: number;
 }
 
 export interface JpegConfig {
@@ -48,6 +49,8 @@ export interface JpegConfig {
 	subsample_mode: string | null;
 	trellis_quant: boolean;
 	overshoot_deringing: boolean;
+	quantize: boolean;
+	colors: number;
 }
 
 export interface WebpConfig {
@@ -58,6 +61,8 @@ export interface WebpConfig {
 	near_lossless: boolean;
 	smart_subsample: boolean;
 	alpha_q: number;
+	quantize: boolean;
+	colors: number;
 }
 
 export interface AvifConfig {
@@ -67,6 +72,8 @@ export interface AvifConfig {
 	lossless: boolean;
 	bitdepth: number;
 	subsample_mode: string | null;
+	quantize: boolean;
+	colors: number;
 }
 
 export interface HeifConfig {
@@ -75,6 +82,8 @@ export interface HeifConfig {
 	effort: number;
 	lossless: boolean;
 	bitdepth: number;
+	quantize: boolean;
+	colors: number;
 }
 
 export interface TiffConfig {
@@ -85,6 +94,8 @@ export interface TiffConfig {
 	tile: boolean;
 	pyramid: boolean;
 	bitdepth: number;
+	quantize: boolean;
+	colors: number;
 }
 
 export interface FormatOptions {

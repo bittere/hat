@@ -33,6 +33,21 @@ export function HeifPanel({ config, onQualityChange, onFieldChange }: HeifPanelP
 				onValueChange={(val) => onFieldChange("bitdepth", val ? Number(val) : 0)}
 				options={HEIF_BITDEPTH_OPTIONS}
 			/>
+			<SettingsSwitch
+				checked={config.quantize}
+				onCheckedChange={(val) => onFieldChange("quantize", val)}
+				title="Quantize Colors"
+				description="Reduce color palette for better compression. Colors are reduced then re-encoded."
+			/>
+			{config.quantize && (
+				<FormatQualitySlider
+					label="Max Colors"
+					value={config.colors}
+					onValueChange={(val) => onFieldChange("colors", val)}
+					min={2}
+					max={256}
+				/>
+			)}
 		</div>
 	);
 }

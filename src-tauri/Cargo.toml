@@ -36,6 +36,8 @@ tauri-plugin-notification = "2.3.3"
 tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 log = "0.4"
+imagequant = "4"
+png = "0.17"
 
 
 [profile.dev]

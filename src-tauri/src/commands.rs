@@ -141,52 +141,7 @@ pub fn recompress(
         .lock()
         .map(|c| {
             let opts = &c.config.format_options;
-            match format {
-                ImageFormat::Png => CompressionFlags {
-                    png_palette: opts.png.palette,
-                    png_interlace: opts.png.interlace,
-                    png_bitdepth: opts.png.bitdepth,
-                    png_filter: opts.png.filter.clone(),
-                    ..Default::default()
-                },
-                ImageFormat::Jpeg => CompressionFlags {
-                    jpeg_optimize_coding: opts.jpeg.optimize_coding,
-                    jpeg_interlace: opts.jpeg.interlace,
-                    jpeg_subsample_mode: opts.jpeg.subsample_mode.clone(),
-                    jpeg_trellis_quant: opts.jpeg.trellis_quant,
-                    jpeg_overshoot_deringing: opts.jpeg.overshoot_deringing,
-                    ..Default::default()
-                },
-                ImageFormat::WebP => CompressionFlags {
-                    webp_effort: opts.webp.effort,
-                    webp_lossless: opts.webp.lossless,
-                    webp_near_lossless: opts.webp.near_lossless,
-                    webp_smart_subsample: opts.webp.smart_subsample,
-                    webp_alpha_q: opts.webp.alpha_q,
-                    ..Default::default()
-                },
-                ImageFormat::Avif => CompressionFlags {
-                    avif_effort: opts.avif.effort,
-                    avif_lossless: opts.avif.lossless,
-                    avif_bitdepth: opts.avif.bitdepth,
-                    avif_subsample_mode: opts.avif.subsample_mode.clone(),
-                    ..Default::default()
-                },
-                ImageFormat::Heif => CompressionFlags {
-                    heif_effort: opts.heif.effort,
-                    heif_lossless: opts.heif.lossless,
-                    heif_bitdepth: opts.heif.bitdepth,
-                    ..Default::default()
-                },
-                ImageFormat::Tiff => CompressionFlags {
-                    tiff_compression: opts.tiff.compression.clone(),
-                    tiff_predictor: opts.tiff.predictor.clone(),
-                    tiff_tile: opts.tiff.tile,
-                    tiff_pyramid: opts.tiff.pyramid,
-                    tiff_bitdepth: opts.tiff.bitdepth,
-                    ..Default::default()
-                },
-            }
+            CompressionFlags::from_format_options(opts, format)
         })
         .unwrap_or_default();
 
@@ -288,52 +243,7 @@ pub fn convert_image(
                 ImageFormat::Heif => opts.heif.quality,
                 ImageFormat::Tiff => opts.tiff.quality,
             };
-            let flags = match dest_format {
-                ImageFormat::Png => CompressionFlags {
-                    png_palette: opts.png.palette,
-                    png_interlace: opts.png.interlace,
-                    png_bitdepth: opts.png.bitdepth,
-                    png_filter: opts.png.filter.clone(),
-                    ..Default::default()
-                },
-                ImageFormat::Jpeg => CompressionFlags {
-                    jpeg_optimize_coding: opts.jpeg.optimize_coding,
-                    jpeg_interlace: opts.jpeg.interlace,
-                    jpeg_subsample_mode: opts.jpeg.subsample_mode.clone(),
-                    jpeg_trellis_quant: opts.jpeg.trellis_quant,
-                    jpeg_overshoot_deringing: opts.jpeg.overshoot_deringing,
-                    ..Default::default()
-                },
-                ImageFormat::WebP => CompressionFlags {
-                    webp_effort: opts.webp.effort,
-                    webp_lossless: opts.webp.lossless,
-                    webp_near_lossless: opts.webp.near_lossless,
-                    webp_smart_subsample: opts.webp.smart_subsample,
-                    webp_alpha_q: opts.webp.alpha_q,
-                    ..Default::default()
-                },
-                ImageFormat::Avif => CompressionFlags {
-                    avif_effort: opts.avif.effort,
-                    avif_lossless: opts.avif.lossless,
-                    avif_bitdepth: opts.avif.bitdepth,
-                    avif_subsample_mode: opts.avif.subsample_mode.clone(),
-                    ..Default::default()
-                },
-                ImageFormat::Heif => CompressionFlags {
-                    heif_effort: opts.heif.effort,
-                    heif_lossless: opts.heif.lossless,
-                    heif_bitdepth: opts.heif.bitdepth,
-                    ..Default::default()
-                },
-                ImageFormat::Tiff => CompressionFlags {
-                    tiff_compression: opts.tiff.compression.clone(),
-                    tiff_predictor: opts.tiff.predictor.clone(),
-                    tiff_tile: opts.tiff.tile,
-                    tiff_pyramid: opts.tiff.pyramid,
-                    tiff_bitdepth: opts.tiff.bitdepth,
-                    ..Default::default()
-                },
-            };
+            let flags = CompressionFlags::from_format_options(opts, dest_format);
             (q, flags)
         })
         .unwrap_or((crate::DEFAULT_QUALITY, CompressionFlags::default()));

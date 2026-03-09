@@ -3,6 +3,7 @@ import { OptionSelect } from "@/components/option-select";
 import { SettingsSwitch } from "@/components/ui/settings-switch";
 import { SUBSAMPLE_OPTIONS } from "@/lib/format-option-constants";
 import type { JpegConfig } from "@/lib/types";
+import { DangerTriangleLinear } from "@solar-icons/react-perf";
 
 interface JpegPanelProps {
 	config: JpegConfig;
@@ -46,6 +47,30 @@ export function JpegPanel({ config, onQualityChange, onFieldChange }: JpegPanelP
 				title="Overshoot Deringing"
 				description="Reduce ringing artifacts. Requires mozjpeg."
 			/>
+			<SettingsSwitch
+				checked={config.quantize}
+				onCheckedChange={(val) => onFieldChange("quantize", val)}
+				title="Quantize Colors"
+				description="Reduce color palette for better compression. Colors are reduced then re-encoded."
+			/>
+			{config.quantize && (
+				<>
+					<div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">
+						<DangerTriangleLinear className="mt-0.5 size-4 shrink-0" />
+						<span>
+							Quantization is usually slower and produces larger file sizes for JPEG. It's
+							recommended to keep this disabled for JPEG.
+						</span>
+					</div>
+					<FormatQualitySlider
+						label="Max Colors"
+						value={config.colors}
+						onValueChange={(val) => onFieldChange("colors", val)}
+						min={2}
+						max={256}
+					/>
+				</>
+			)}
 		</div>
 	);
 }

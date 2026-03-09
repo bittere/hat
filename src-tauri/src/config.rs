@@ -15,6 +15,8 @@ pub struct PngConfig {
     pub bitdepth: u8,
     #[serde(default)]
     pub filter: Option<String>,
+    #[serde(default = "default_png_colors")]
+    pub colors: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -32,6 +34,10 @@ pub struct JpegConfig {
     pub trellis_quant: bool,
     #[serde(default)]
     pub overshoot_deringing: bool,
+    #[serde(default)]
+    pub quantize: bool,
+    #[serde(default = "default_quantize_colors")]
+    pub colors: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -49,6 +55,10 @@ pub struct WebpConfig {
     pub smart_subsample: bool,
     #[serde(default = "default_alpha_q")]
     pub alpha_q: u8,
+    #[serde(default)]
+    pub quantize: bool,
+    #[serde(default = "default_quantize_colors")]
+    pub colors: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -64,6 +74,10 @@ pub struct AvifConfig {
     pub bitdepth: u8,
     #[serde(default)]
     pub subsample_mode: Option<String>,
+    #[serde(default)]
+    pub quantize: bool,
+    #[serde(default = "default_quantize_colors")]
+    pub colors: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -77,6 +91,10 @@ pub struct HeifConfig {
     pub lossless: bool,
     #[serde(default)]
     pub bitdepth: u8,
+    #[serde(default)]
+    pub quantize: bool,
+    #[serde(default = "default_quantize_colors")]
+    pub colors: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -94,6 +112,18 @@ pub struct TiffConfig {
     pub pyramid: bool,
     #[serde(default)]
     pub bitdepth: u8,
+    #[serde(default)]
+    pub quantize: bool,
+    #[serde(default = "default_quantize_colors")]
+    pub colors: u16,
+}
+
+fn default_png_colors() -> u16 {
+    256
+}
+
+fn default_quantize_colors() -> u16 {
+    256
 }
 
 fn default_true() -> bool {
@@ -131,6 +161,8 @@ fn default_webp_config() -> WebpConfig {
         near_lossless: false,
         smart_subsample: false,
         alpha_q: 100,
+        quantize: false,
+        colors: 256,
     }
 }
 
@@ -142,6 +174,8 @@ fn default_avif_config() -> AvifConfig {
         lossless: false,
         bitdepth: 0,
         subsample_mode: None,
+        quantize: false,
+        colors: 256,
     }
 }
 
@@ -152,6 +186,8 @@ fn default_heif_config() -> HeifConfig {
         effort: 4,
         lossless: false,
         bitdepth: 0,
+        quantize: false,
+        colors: 256,
     }
 }
 
@@ -164,6 +200,8 @@ fn default_tiff_config() -> TiffConfig {
         tile: false,
         pyramid: false,
         bitdepth: 0,
+        quantize: false,
+        colors: 256,
     }
 }
 
@@ -178,6 +216,7 @@ impl Default for FormatOptions {
                 interlace: false,
                 bitdepth: 0,
                 filter: None,
+                colors: 256,
             },
             jpeg: JpegConfig {
                 quality: q,
@@ -187,6 +226,8 @@ impl Default for FormatOptions {
                 subsample_mode: None,
                 trellis_quant: false,
                 overshoot_deringing: false,
+                quantize: false,
+                colors: 256,
             },
             webp: default_webp_config(),
             avif: default_avif_config(),
