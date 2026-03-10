@@ -1,28 +1,19 @@
 # AGENTS.md
 
 ## Build & Dev Commands
-- **Dev:** `bun run tauri dev` (starts Vite + Tauri together)
-- **Build:** `bun run build:tauri` (sets up libvips, then `tsc && vite build`)
-- **Type-check frontend:** `bunx tsc --noEmit`
-- **Check Rust:** `cargo check` (run from `src-tauri/`)
-- **Package manager:** Bun (not npm/yarn)
+- **Dev:** `bun run tauri dev` — **Lint:** `bun run lint` (Biome) — **Lint+fix:** `bun run lint:fix`
+- **Build:** `bun run build:tauri` — **Typecheck:** `bun run typecheck` — **Check Rust:** `cargo check` (from `src-tauri/`)
+- **Package manager:** Bun (not npm/yarn). No test framework configured.
 
 ## Architecture
-- **Tauri v2** desktop app: Rust backend (`src-tauri/`) + React frontend (`src/`).
-- Rust entry point: `src-tauri/src/lib.rs`. Tauri commands are `#[tauri::command]` fns registered in `invoke_handler`.
-- Frontend uses **React 19**, **Vite 7**, **Tailwind CSS v4** (`@tailwindcss/vite`), **TypeScript** (strict mode).
-- UI components: coss UI registry, (https://coss.com/ui/llms.txt) in `src/components/ui/`. Icons: **@solar-icons/react-perf**. 
-
----
-Note: USE ONLY OFFICIAL COSS UI COMPONENTS. INSTALL THEM WITH THE CLI.
-When you absolutely need to create your own components or write your own code, make sure to break it up into proper reusable components.
----
-
-- Path alias: `@/*` → `./src/*`. Utility: `src/lib/utils.ts` (`cn()` via clsx + tailwind-merge).
-- Hooks go in `src/hooks/`. Rust↔frontend communication via Tauri events (`emit`/`listen`) and commands (`invoke`).
-- When using Solar icons, import using: `import { <icon name> } from "@solar-icons/react-perf"`, where icon name is made up of the name of the icon and it's variant eg. BillCrossLinear.
+- **Tauri v2** desktop app: Rust backend (`src-tauri/src/`) + React frontend (`src/`).
+- Rust entry: `lib.rs` (registers `#[tauri::command]` fns). Modules: `commands`, `processor`, `compression`, `watcher`, `config`, `tray`, `platform`.
+- Frontend: **React 19 + Vite 7 + Tailwind v4 + TypeScript strict**. Path alias `@/*` → `./src/*`.
+- UI components in `src/components/ui/` (coss registry, install via CLI — do NOT hand-write). Icons: `@solar-icons/react-perf`.
+- Hooks in `src/hooks/`. Rust↔JS via Tauri `invoke`/`emit`/`listen`.
 
 ## Code Style
-- **TypeScript:** strict, no unused locals/params. Use named exports, kebab-case filenames.
-- **Rust:** edition 2021, serde for serialization. Structs that cross the Tauri bridge derive `Clone, Serialize`.
-- Prefer existing libraries already in the project. Do not introduce new icon libraries.
+- **Biome** formatter: tabs, 100-char line width, double quotes, semicolons, ES5 trailing commas.
+- **TypeScript:** strict, no unused locals/params, named exports, kebab-case filenames.
+- **Rust:** edition 2021, serde for serialization, `thiserror` for errors. Bridge structs derive `Clone, Serialize`.
+- Prefer existing libs. Do not introduce new icon/component libraries. Break custom code into reusable components.
