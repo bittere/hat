@@ -94,8 +94,8 @@ export function useCompressionEvents() {
 			const { path, attempt, retry_quality, initial_size, compressed_size } = event.payload;
 			const fileName = extractFileName(path);
 			toastManager.add({
-				title: "Recompressing image",
-				description: `${fileName} got larger (${formatBytes(initial_size)} → ${formatBytes(compressed_size)}). Retrying at level ${retry_quality} (attempt ${attempt})…`,
+				title: `Recompressing: ${fileName}`,
+				description: `${formatBytes(initial_size)} → ${formatBytes(compressed_size)}, level ${retry_quality} (#${attempt})`,
 				type: "warning",
 			});
 		});

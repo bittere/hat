@@ -107,13 +107,13 @@ pub fn process_file(
         match vips.compress(path, &output, current_quality, &flags, convert_to) {
             Ok(size) => {
                 compressed_size = size;
-                if size <= initial_size || current_quality >= 100 {
+                if size <= initial_size || current_quality <= 1 {
                     success = true;
                     break;
                 }
 
-                // Compressed file is larger — notify and retry
-                let retry_quality = (current_quality + QUALITY_STEP).min(100);
+                // Compressed file is larger — reduce quality and retry
+                let retry_quality = current_quality.saturating_sub(QUALITY_STEP).max(1);
                 info!(
                     "[compression] Compressed size ({size}) > original ({initial_size}), retrying with quality {retry_quality} (attempt {})",
                     attempt + 1
@@ -132,7 +132,7 @@ pub fn process_file(
                 );
 
                 current_quality = retry_quality;
-                if current_quality >= 100 {
+                if current_quality <= 1 {
                     continue;
                 }
             }
