@@ -85,7 +85,7 @@ export function SidebarHistory({ history }: { history: CompressionRecord[] }) {
 
 	return (
 		<ScrollArea className="flex-1">
-			<div className="relative">
+			<div className="relative pe-6">
 				{/* Vertical timeline line */}
 				<div className="absolute top-1 bottom-1 left-[3.5px] w-px bg-border" />
 
