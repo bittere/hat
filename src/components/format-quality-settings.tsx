@@ -54,7 +54,7 @@ export function FormatQualitySettings() {
 	if (!formatOptions) return null;
 
 	return (
-		<Tabs className="w-full flex-row" defaultValue="jpeg" orientation="vertical">
+		<Tabs className="h-full w-full flex-row" defaultValue="jpeg" orientation="vertical">
 			<div className="border-s">
 				<TabsList variant="underline">
 					{FORMAT_LABELS.map(({ key, label }) => (
@@ -66,7 +66,7 @@ export function FormatQualitySettings() {
 			</div>
 
 			<TabsPanel value="jpeg" className="overflow-hidden">
-				<ScrollArea scrollFade className="max-h-[40vh]">
+				<ScrollArea scrollFade className="h-full">
 					<JpegPanel
 						config={formatOptions.jpeg}
 						onQualityChange={(val) => handleQualityChange("jpeg", val)}
@@ -76,7 +76,7 @@ export function FormatQualitySettings() {
 			</TabsPanel>
 
 			<TabsPanel value="png" className="overflow-hidden">
-				<ScrollArea scrollFade className="max-h-[40vh]">
+				<ScrollArea scrollFade className="h-full">
 					<PngPanel
 						config={formatOptions.png}
 						onQualityChange={(val) => handleQualityChange("png", val)}
@@ -86,7 +86,7 @@ export function FormatQualitySettings() {
 			</TabsPanel>
 
 			<TabsPanel value="webp" className="overflow-hidden">
-				<ScrollArea scrollFade className="max-h-[40vh]">
+				<ScrollArea scrollFade className="h-full">
 					<WebpPanel
 						config={formatOptions.webp}
 						onQualityChange={(val) => handleQualityChange("webp", val)}
@@ -96,7 +96,7 @@ export function FormatQualitySettings() {
 			</TabsPanel>
 
 			<TabsPanel value="avif" className="overflow-hidden">
-				<ScrollArea scrollFade className="max-h-[40vh]">
+				<ScrollArea scrollFade className="h-full">
 					<AvifPanel
 						config={formatOptions.avif}
 						onQualityChange={(val) => handleQualityChange("avif", val)}
@@ -106,7 +106,7 @@ export function FormatQualitySettings() {
 			</TabsPanel>
 
 			<TabsPanel value="heif" className="overflow-hidden">
-				<ScrollArea scrollFade className="max-h-[40vh]">
+				<ScrollArea scrollFade className="h-full">
 					<HeifPanel
 						config={formatOptions.heif}
 						onQualityChange={(val) => handleQualityChange("heif", val)}
@@ -116,7 +116,7 @@ export function FormatQualitySettings() {
 			</TabsPanel>
 
 			<TabsPanel value="tiff" className="overflow-hidden">
-				<ScrollArea scrollFade className="max-h-[40vh]">
+				<ScrollArea scrollFade className="h-full">
 					<TiffPanel
 						config={formatOptions.tiff}
 						onQualityChange={(val) => handleQualityChange("tiff", val)}

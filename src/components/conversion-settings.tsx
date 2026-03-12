@@ -119,8 +119,8 @@ export function ConversionSettings() {
 		const available = FORMAT_LABELS.map((f) => f.key).filter((k) => !usedSources.has(k));
 		if (available.length < 2) return;
 
-		const source = available[0];
-		const target = available.find((k) => k !== source) ?? available[1];
+		const target = available[0];
+		const source = available.find((k) => k !== target) ?? available[1];
 
 		updateRules((prev) => [
 			...prev,

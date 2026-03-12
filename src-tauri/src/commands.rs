@@ -402,9 +402,17 @@ pub async fn search_directories(query: String) -> Vec<String> {
         return special_folders;
     }
 
-    // 3. Filter special folders that match the query (start with it)
+    // 3. Filter special folders whose name contains the query (case-insensitive)
     for folder in special_folders {
-        if folder.to_lowercase().starts_with(&query_lower) && !results.contains(&folder) {
+        let name = Path::new(&folder)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let folder_lower = folder.to_lowercase();
+        if (name.contains(&query_lower) || folder_lower.starts_with(&query_lower))
+            && !results.contains(&folder)
+        {
             results.push(folder);
         }
     }
@@ -416,43 +424,61 @@ pub async fn search_directories(query: String) -> Vec<String> {
 
     // 4. Standard directory search
     let path = Path::new(&query);
+    let is_path_query = query.contains('/') || query.contains('\\') || query.starts_with('~');
 
     // Determine the directory to search in and the prefix to match
     let (search_dir, prefix) = if query.ends_with('/') || query.ends_with('\\') {
-        (path, "")
-    } else if let Some(parent) = path.parent() {
-        let p_str = parent.as_os_str().to_string_lossy();
-        if p_str.is_empty() {
-            if let Some(stripped) = query.strip_prefix('/') {
-                (Path::new("/"), stripped)
+        (path.to_path_buf(), "".to_string())
+    } else if is_path_query {
+        if let Some(parent) = path.parent() {
+            let p_str = parent.as_os_str().to_string_lossy();
+            if p_str.is_empty() {
+                if let Some(stripped) = query.strip_prefix('/') {
+                    (Path::new("/").to_path_buf(), stripped.to_string())
+                } else {
+                    (Path::new(".").to_path_buf(), query.clone())
+                }
             } else {
-                (Path::new("."), query.as_str())
+                (
+                    parent.to_path_buf(),
+                    path.file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string(),
+                )
             }
         } else {
-            (
-                parent,
-                path.file_name().and_then(|s| s.to_str()).unwrap_or(""),
-            )
+            (Path::new("/").to_path_buf(), query.clone())
         }
     } else {
-        (Path::new("/"), query.as_str())
+        // Plain name query (e.g. "Down") — search inside home directory
+        let home = dirs::home_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
+        (home, query.clone())
     };
 
     // If the path itself is a directory, include it
-    if path.is_dir() {
+    if is_path_query && path.is_dir() {
         let p_str = path.display().to_string();
         if !results.contains(&p_str) {
             results.push(p_str);
         }
     }
 
-    if let Ok(entries) = std::fs::read_dir(search_dir) {
+    if let Ok(entries) = std::fs::read_dir(&search_dir) {
         let mut fs_results = Vec::new();
+        let prefix_lower = prefix.to_lowercase();
         for entry in entries.flatten() {
             if let Ok(file_type) = entry.file_type() {
                 if file_type.is_dir() {
                     let name = entry.file_name().to_string_lossy().to_string();
-                    if name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                    let name_lower = name.to_lowercase();
+                    // For plain name queries, use contains; for path queries, use starts_with
+                    let matches = if is_path_query {
+                        name_lower.starts_with(&prefix_lower)
+                    } else {
+                        name_lower.contains(&prefix_lower)
+                    };
+                    if matches {
                         let full_path = entry.path().display().to_string();
                         fs_results.push(full_path);
                     }
@@ -465,7 +491,7 @@ pub async fn search_directories(query: String) -> Vec<String> {
         for r in fs_results {
             if !results.contains(&r) {
                 results.push(r);
-                if results.len() >= 5 {
+                if results.len() >= 10 {
                     break;
                 }
             }
