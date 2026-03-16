@@ -1,5 +1,6 @@
 import { AddFolderLinear, AltArrowDownLinear } from "@solar-icons/react-perf";
 import { invoke } from "@tauri-apps/api/core";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open as openFolderPicker } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { ConversionSettings } from "@/components/conversion-settings";
@@ -61,6 +62,7 @@ export function SettingsContent({
 	const [isFocused, setIsFocused] = useState(false);
 	const [showBackgroundNotification, setShowBackgroundNotification] = useState(true);
 	const [showSystemNotifications, setShowSystemNotifications] = useState(true);
+	const [autostart, setAutostart] = useState(false);
 	const [internalTab, setInternalTab] = useState("compression");
 	const { theme, setTheme } = useTheme();
 
@@ -70,6 +72,7 @@ export function SettingsContent({
 	useEffect(() => {
 		invoke<boolean>("get_show_background_notification").then(setShowBackgroundNotification);
 		invoke<boolean>("get_show_system_notifications").then(setShowSystemNotifications);
+		isEnabled().then(setAutostart);
 	}, []);
 
 	const performSearch = useCallback(async (query: string) => {
@@ -163,6 +166,19 @@ export function SettingsContent({
 		}
 	};
 
+	const handleToggleAutostart = async (checked: boolean) => {
+		try {
+			if (checked) {
+				await enable();
+			} else {
+				await disable();
+			}
+			setAutostart(checked);
+		} catch (err) {
+			console.error("Failed to update autostart setting", err);
+		}
+	};
+
 	const selectedTheme = themeItems.find((t) => t.value === theme) ?? themeItems[0];
 
 	return (
@@ -174,6 +190,7 @@ export function SettingsContent({
 					{showFolders && <TabsTab value="folders">Folders</TabsTab>}
 					<TabsTab value="appearance">Appearance</TabsTab>
 					<TabsTab value="notifications">Notifications</TabsTab>
+					<TabsTab value="system">System</TabsTab>
 				</TabsList>
 			</div>
 
@@ -348,6 +365,18 @@ export function SettingsContent({
 						onCheckedChange={handleToggleSystemNotifications}
 						title="System Notifications"
 						description="Show a system notification when an image is successfully compressed."
+					/>
+				</div>
+			</TabsPanel>
+
+			{/* System Tab */}
+			<TabsPanel value="system">
+				<div className="space-y-4">
+					<SettingsSwitch
+						checked={autostart}
+						onCheckedChange={handleToggleAutostart}
+						title="Launch at Startup"
+						description="Automatically start Hat when you log in to your computer."
 					/>
 				</div>
 			</TabsPanel>

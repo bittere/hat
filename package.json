@@ -23,6 +23,7 @@
     "@fontsource-variable/geist": "^5.2.8",
     "@solar-icons/react-perf": "^2.1.0",
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "class-variance-authority": "^0.7.1",

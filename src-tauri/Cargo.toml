@@ -39,6 +39,7 @@ log = "0.4"
 rayon = "1"
 imagequant = "4"
 png = "0.17"
+tauri-plugin-autostart = "2.5.1"
 
 
 [profile.dev]
