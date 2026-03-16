@@ -307,15 +307,22 @@ pub async fn compress_files(
         .as_ref()
         .ok_or("libvips not available")?;
 
-    for path_str in paths {
-        let path = Path::new(&path_str);
-        if let Err(e) = crate::processor::process_file(&app, vips, path) {
+    use rayon::prelude::*;
+
+    paths.par_iter().for_each(|path_str| {
+        let path = Path::new(path_str);
+        if let Err(e) = crate::processor::process_file_with_mode(
+            &app,
+            vips,
+            path,
+            crate::processor::InputMode::Manual,
+        ) {
             error!(
                 "[manual-compression] Failed to compress {}: {}",
                 path_str, e
             );
         }
-    }
+    });
 
     Ok(())
 }

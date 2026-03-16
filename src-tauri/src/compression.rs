@@ -255,6 +255,30 @@ impl CompressionFlags {
 // Minimal libvips FFI wrapper
 // ---------------------------------------------------------------------------
 
+/// RAII guard for a raw VipsImage pointer.  Calls `g_object_unref` on drop.
+pub struct VipsImage<'a> {
+    ptr: *mut c_void,
+    vips: &'a Vips,
+}
+
+impl<'a> VipsImage<'a> {
+    fn new(ptr: *mut c_void, vips: &'a Vips) -> Self {
+        Self { ptr, vips }
+    }
+
+    pub fn as_ptr(&self) -> *mut c_void {
+        self.ptr
+    }
+}
+
+impl Drop for VipsImage<'_> {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe { (self.vips.fn_object_unref)(self.ptr) };
+        }
+    }
+}
+
 pub struct Vips {
     _lib: Library,
     fn_new_from_file: VipsNewFromFileFn,
@@ -330,9 +354,8 @@ impl Vips {
         }
     }
 
-    fn load_image(&self, path: &Path) -> Result<*mut c_void> {
+    pub fn load_image(&self, path: &Path) -> Result<VipsImage<'_>> {
         let cpath = path_to_cstring(path)?;
-        // NULL terminates the variadic arg list
         let img = unsafe { (self.fn_new_from_file)(cpath.as_ptr(), std::ptr::null::<c_char>()) };
         if img.is_null() {
             return Err(CompressionError::Vips(format!(
@@ -341,13 +364,12 @@ impl Vips {
                 self.vips_error()
             )));
         }
-        Ok(img)
+        Ok(VipsImage::new(img, self))
     }
 
     fn save_image(&self, img: *mut c_void, path_with_opts: &str) -> Result<()> {
         let cpath = CString::new(path_with_opts)
             .map_err(|_| CompressionError::InvalidPath(path_with_opts.to_string()))?;
-        // NULL terminates the variadic arg list
         let ret =
             unsafe { (self.fn_write_to_file)(img, cpath.as_ptr(), std::ptr::null::<c_char>()) };
         if ret != 0 {
@@ -359,19 +381,15 @@ impl Vips {
         Ok(())
     }
 
-    fn unref(&self, img: *mut c_void) {
-        unsafe { (self.fn_object_unref)(img) };
-    }
-
     /// Extract raw pixel data from a VipsImage as RGBA u8 bytes.
     /// Returns (width, height, rgba_bytes).
-    fn extract_rgba(&self, img: *mut c_void) -> Result<(u32, u32, Vec<u8>)> {
-        let width = unsafe { (self.fn_get_width)(img) } as u32;
-        let height = unsafe { (self.fn_get_height)(img) } as u32;
-        let bands = unsafe { (self.fn_get_bands)(img) } as u32;
+    pub fn extract_rgba(&self, img: &VipsImage<'_>) -> Result<(u32, u32, Vec<u8>)> {
+        let width = unsafe { (self.fn_get_width)(img.as_ptr()) } as u32;
+        let height = unsafe { (self.fn_get_height)(img.as_ptr()) } as u32;
+        let bands = unsafe { (self.fn_get_bands)(img.as_ptr()) } as u32;
 
         let mut size: usize = 0;
-        let buf = unsafe { (self.fn_write_to_memory)(img, &mut size) };
+        let buf = unsafe { (self.fn_write_to_memory)(img.as_ptr(), &mut size) };
         if buf.is_null() {
             return Err(CompressionError::Vips(format!(
                 "vips_image_write_to_memory failed: {}",
@@ -390,29 +408,37 @@ impl Vips {
             )));
         }
 
+        let pixel_count = (width as usize) * (height as usize);
         let rgba = match bands {
             4 => raw.to_vec(),
             3 => {
-                let mut out = Vec::with_capacity((width as usize) * (height as usize) * 4);
-                for pixel in raw.chunks_exact(3) {
-                    out.extend_from_slice(pixel);
-                    out.push(255);
+                let mut out = vec![0u8; pixel_count * 4];
+                for (src, dst) in raw.chunks_exact(3).zip(out.chunks_exact_mut(4)) {
+                    dst[0] = src[0];
+                    dst[1] = src[1];
+                    dst[2] = src[2];
+                    dst[3] = 255;
                 }
                 out
             }
             2 => {
-                let mut out = Vec::with_capacity((width as usize) * (height as usize) * 4);
-                for pixel in raw.chunks_exact(2) {
-                    let g = pixel[0];
-                    let a = pixel[1];
-                    out.extend_from_slice(&[g, g, g, a]);
+                let mut out = vec![0u8; pixel_count * 4];
+                for (src, dst) in raw.chunks_exact(2).zip(out.chunks_exact_mut(4)) {
+                    dst[0] = src[0];
+                    dst[1] = src[0];
+                    dst[2] = src[0];
+                    dst[3] = src[1];
                 }
                 out
             }
             1 => {
-                let mut out = Vec::with_capacity((width as usize) * (height as usize) * 4);
-                for &g in raw {
-                    out.extend_from_slice(&[g, g, g, 255]);
+                let mut out = vec![0u8; pixel_count * 4];
+                for (i, &g) in raw.iter().enumerate() {
+                    let o = i * 4;
+                    out[o] = g;
+                    out[o + 1] = g;
+                    out[o + 2] = g;
+                    out[o + 3] = 255;
                 }
                 out
             }
@@ -429,29 +455,18 @@ impl Vips {
         Ok((width, height, rgba))
     }
 
-    /// Quantize an image using libimagequant and reconstruct an RGB buffer.
-    ///
-    /// Returns (width, height, rgb_bytes) suitable for loading back into
-    /// libvips via `vips_image_new_from_memory_copy`.
-    ///
-    /// `dithering` controls the dithering level (0.0 = none, 1.0 = full).
-    /// For lossy formats (JPEG, WebP, AVIF, HEIF) use 0.0 — dithering adds
-    /// high-frequency noise that fights DCT/wavelet compression, producing
-    /// larger files.  For indexed formats (PNG) use 1.0.
-    fn quantize_to_rgb(
+    /// Quantize RGBA pixel data using libimagequant and reconstruct an RGB buffer.
+    fn quantize_rgba_to_rgb(
         &self,
-        input: &Path,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
         quality: u8,
         max_colors: u16,
         dithering: f32,
-    ) -> Result<(u32, u32, Vec<u8>)> {
-        let img = self.load_image(input)?;
-        let result = self.extract_rgba(img);
-        self.unref(img);
-        let (width, height, rgba) = result?;
-
+    ) -> Result<Vec<u8>> {
         info!(
-            "[compression] quantize_to_rgb: {}x{} image, {} bytes RGBA, dither={}",
+            "[compression] quantize_rgba_to_rgb: {}x{} image, {} bytes RGBA, dither={}",
             width,
             height,
             rgba.len(),
@@ -459,8 +474,6 @@ impl Vips {
         );
 
         let mut liq = imagequant::new();
-        // Use fastest speed for lossy targets — the lossy encoder will
-        // smooth things out anyway, so extra quantization effort is wasted.
         let speed = if dithering < 0.01 { 10 } else { 4 };
         liq.set_speed(speed)
             .map_err(|e| CompressionError::Vips(format!("imagequant: {}", e)))?;
@@ -474,11 +487,9 @@ impl Vips {
         liq.set_max_colors(colors)
             .map_err(|e| CompressionError::Vips(format!("imagequant set_max_colors: {}", e)))?;
 
+        let pixel_count = (width as usize) * (height as usize);
         let pixels: &[imagequant::RGBA] = unsafe {
-            std::slice::from_raw_parts(
-                rgba.as_ptr() as *const imagequant::RGBA,
-                (width as usize) * (height as usize),
-            )
+            std::slice::from_raw_parts(rgba.as_ptr() as *const imagequant::RGBA, pixel_count)
         };
 
         let mut liq_img = liq
@@ -499,25 +510,39 @@ impl Vips {
 
         let remap_quality = quantized.quantization_quality().unwrap_or(0);
         info!(
-            "[compression] quantize_to_rgb: {} palette colors, quality={}",
+            "[compression] quantize_rgba_to_rgb: {} palette colors, quality={}",
             palette.len(),
             remap_quality
         );
 
-        // Reconstruct full-resolution RGB from indexed pixels + palette
-        let pixel_count = (width as usize) * (height as usize);
-        let mut rgb = Vec::with_capacity(pixel_count * 3);
-        for &idx in &indexed_pixels {
+        let mut rgb = vec![0u8; pixel_count * 3];
+        for (&idx, dst) in indexed_pixels.iter().zip(rgb.chunks_exact_mut(3)) {
             let c = &palette[idx as usize];
-            rgb.extend_from_slice(&[c.r, c.g, c.b]);
+            dst[0] = c.r;
+            dst[1] = c.g;
+            dst[2] = c.b;
         }
 
+        Ok(rgb)
+    }
+
+    /// Quantize from pre-extracted RGBA, returning (width, height, rgb).
+    #[allow(dead_code)]
+    pub fn quantize_cached_rgba_to_rgb(
+        &self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+        quality: u8,
+        max_colors: u16,
+        dithering: f32,
+    ) -> Result<(u32, u32, Vec<u8>)> {
+        let rgb = self.quantize_rgba_to_rgb(rgba, width, height, quality, max_colors, dithering)?;
         Ok((width, height, rgb))
     }
 
     /// Create a VipsImage from raw RGB data in memory.
-    /// The returned image pointer must be freed with `unref`.
-    fn load_image_from_rgb(&self, rgb: &[u8], width: u32, height: u32) -> Result<*mut c_void> {
+    fn load_image_from_rgb(&self, rgb: &[u8], width: u32, height: u32) -> Result<VipsImage<'_>> {
         let img = unsafe {
             (self.fn_new_from_memory_copy)(
                 rgb.as_ptr() as *const c_void,
@@ -534,12 +559,13 @@ impl Vips {
                 self.vips_error()
             )));
         }
-        Ok(img)
+        Ok(VipsImage::new(img, self))
     }
 
     /// Quantize an image with libimagequant and encode as indexed PNG.
     fn compress_png_imagequant(
         &self,
+        img: &VipsImage<'_>,
         input: &Path,
         output: &Path,
         quality: u8,
@@ -547,10 +573,7 @@ impl Vips {
     ) -> Result<u64> {
         let q = quality.clamp(1, 100);
 
-        let img = self.load_image(input)?;
-        let result = self.extract_rgba(img);
-        self.unref(img);
-        let (width, height, rgba) = result?;
+        let (width, height, rgba) = self.extract_rgba(img)?;
 
         info!(
             "[compression] imagequant: {}x{} image loaded, {} bytes RGBA",
@@ -682,13 +705,27 @@ impl Vips {
         info!("[compression] quality={} → libvips Q={}", quality, q);
 
         let effective_format = target_format.unwrap_or(format);
+        let img = self.load_image(input)?;
+        self.compress_loaded(&img, input, output, q, flags, effective_format)
+    }
+
+    /// Compress using a pre-loaded VipsImage (avoids repeated disk reads on retries).
+    pub fn compress_loaded(
+        &self,
+        img: &VipsImage<'_>,
+        input: &Path,
+        output: &Path,
+        quality: u8,
+        flags: &CompressionFlags,
+        effective_format: ImageFormat,
+    ) -> Result<u64> {
         match effective_format {
-            ImageFormat::Png => self.compress_png(input, output, q, flags),
-            ImageFormat::Jpeg => self.compress_jpeg(input, output, q, flags),
-            ImageFormat::WebP => self.compress_webp(input, output, q, flags),
-            ImageFormat::Avif => self.compress_avif(input, output, q, flags),
-            ImageFormat::Heif => self.compress_heif(input, output, q, flags),
-            ImageFormat::Tiff => self.compress_tiff(input, output, q, flags),
+            ImageFormat::Png => self.compress_png(img, input, output, quality, flags),
+            ImageFormat::Jpeg => self.compress_jpeg(img, input, output, quality, flags),
+            ImageFormat::WebP => self.compress_webp(img, input, output, quality, flags),
+            ImageFormat::Avif => self.compress_avif(img, input, output, quality, flags),
+            ImageFormat::Heif => self.compress_heif(img, input, output, quality, flags),
+            ImageFormat::Tiff => self.compress_tiff(img, input, output, quality, flags),
         }
     }
 
@@ -698,6 +735,7 @@ impl Vips {
 
     pub fn compress_png(
         &self,
+        img: &VipsImage<'_>,
         input: &Path,
         output: &Path,
         quality: u8,
@@ -705,7 +743,7 @@ impl Vips {
     ) -> Result<u64> {
         // Use imagequant for palette mode — much better quantization quality
         if flags.png_palette {
-            match self.compress_png_imagequant(input, output, quality, flags) {
+            match self.compress_png_imagequant(img, input, output, quality, flags) {
                 Ok(size) => return Ok(size),
                 Err(e) => {
                     warn!(
@@ -746,10 +784,7 @@ impl Vips {
         let suffix = format!("{}[{}]", out, parts.join(","));
 
         info!("[compression] PNG save params: {}", suffix);
-        let img = self.load_image(input)?;
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
+        self.save_image(img.as_ptr(), &suffix)?;
 
         let size = fs::metadata(output)?.len();
         info!(
@@ -763,6 +798,7 @@ impl Vips {
 
     pub fn compress_jpeg(
         &self,
+        img: &VipsImage<'_>,
         input: &Path,
         output: &Path,
         quality: u8,
@@ -791,30 +827,27 @@ impl Vips {
 
         info!("[compression] JPEG save params: {}", suffix);
 
-        let img = if flags.jpeg_quantize {
-            match self.quantize_to_rgb(input, quality, flags.jpeg_colors, 0.0) {
-                Ok((w, h, rgb)) => match self.load_image_from_rgb(&rgb, w, h) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        warn!("[compression] JPEG quantize load_image_from_rgb failed, falling back: {}", e);
-                        self.load_image(input)?
-                    }
-                },
+        let _quantized;
+        let save_ptr = if flags.jpeg_quantize {
+            match self.extract_rgba(img).and_then(|(w, h, rgba)| {
+                let rgb =
+                    self.quantize_rgba_to_rgb(&rgba, w, h, quality, flags.jpeg_colors, 0.0)?;
+                self.load_image_from_rgb(&rgb, w, h)
+            }) {
+                Ok(qi) => {
+                    _quantized = qi;
+                    _quantized.as_ptr()
+                }
                 Err(e) => {
-                    warn!(
-                        "[compression] JPEG quantize_to_rgb failed, falling back: {}",
-                        e
-                    );
-                    self.load_image(input)?
+                    warn!("[compression] JPEG quantize failed, falling back: {}", e);
+                    img.as_ptr()
                 }
             }
         } else {
-            self.load_image(input)?
+            img.as_ptr()
         };
 
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
+        self.save_image(save_ptr, &suffix)?;
 
         let size = fs::metadata(output)?.len();
         info!(
@@ -828,6 +861,7 @@ impl Vips {
 
     pub fn compress_webp(
         &self,
+        img: &VipsImage<'_>,
         input: &Path,
         output: &Path,
         quality: u8,
@@ -861,30 +895,27 @@ impl Vips {
 
         info!("[compression] WebP save params: {}", suffix);
 
-        let img = if flags.webp_quantize {
-            match self.quantize_to_rgb(input, quality, flags.webp_colors, 0.0) {
-                Ok((w, h, rgb)) => match self.load_image_from_rgb(&rgb, w, h) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        warn!("[compression] WebP quantize load_image_from_rgb failed, falling back: {}", e);
-                        self.load_image(input)?
-                    }
-                },
+        let _quantized;
+        let save_ptr = if flags.webp_quantize {
+            match self.extract_rgba(img).and_then(|(w, h, rgba)| {
+                let rgb =
+                    self.quantize_rgba_to_rgb(&rgba, w, h, quality, flags.webp_colors, 0.0)?;
+                self.load_image_from_rgb(&rgb, w, h)
+            }) {
+                Ok(qi) => {
+                    _quantized = qi;
+                    _quantized.as_ptr()
+                }
                 Err(e) => {
-                    warn!(
-                        "[compression] WebP quantize_to_rgb failed, falling back: {}",
-                        e
-                    );
-                    self.load_image(input)?
+                    warn!("[compression] WebP quantize failed, falling back: {}", e);
+                    img.as_ptr()
                 }
             }
         } else {
-            self.load_image(input)?
+            img.as_ptr()
         };
 
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
+        self.save_image(save_ptr, &suffix)?;
 
         let size = fs::metadata(output)?.len();
         info!(
@@ -898,6 +929,7 @@ impl Vips {
 
     pub fn compress_avif(
         &self,
+        img: &VipsImage<'_>,
         input: &Path,
         output: &Path,
         quality: u8,
@@ -928,30 +960,27 @@ impl Vips {
 
         info!("[compression] AVIF save params: {}", suffix);
 
-        let img = if flags.avif_quantize {
-            match self.quantize_to_rgb(input, quality, flags.avif_colors, 0.0) {
-                Ok((w, h, rgb)) => match self.load_image_from_rgb(&rgb, w, h) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        warn!("[compression] AVIF quantize load_image_from_rgb failed, falling back: {}", e);
-                        self.load_image(input)?
-                    }
-                },
+        let _quantized;
+        let save_ptr = if flags.avif_quantize {
+            match self.extract_rgba(img).and_then(|(w, h, rgba)| {
+                let rgb =
+                    self.quantize_rgba_to_rgb(&rgba, w, h, quality, flags.avif_colors, 0.0)?;
+                self.load_image_from_rgb(&rgb, w, h)
+            }) {
+                Ok(qi) => {
+                    _quantized = qi;
+                    _quantized.as_ptr()
+                }
                 Err(e) => {
-                    warn!(
-                        "[compression] AVIF quantize_to_rgb failed, falling back: {}",
-                        e
-                    );
-                    self.load_image(input)?
+                    warn!("[compression] AVIF quantize failed, falling back: {}", e);
+                    img.as_ptr()
                 }
             }
         } else {
-            self.load_image(input)?
+            img.as_ptr()
         };
 
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
+        self.save_image(save_ptr, &suffix)?;
 
         let size = fs::metadata(output)?.len();
         info!(
@@ -965,6 +994,7 @@ impl Vips {
 
     pub fn compress_heif(
         &self,
+        img: &VipsImage<'_>,
         input: &Path,
         output: &Path,
         quality: u8,
@@ -992,30 +1022,27 @@ impl Vips {
 
         info!("[compression] HEIF save params: {}", suffix);
 
-        let img = if flags.heif_quantize {
-            match self.quantize_to_rgb(input, quality, flags.heif_colors, 0.0) {
-                Ok((w, h, rgb)) => match self.load_image_from_rgb(&rgb, w, h) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        warn!("[compression] HEIF quantize load_image_from_rgb failed, falling back: {}", e);
-                        self.load_image(input)?
-                    }
-                },
+        let _quantized;
+        let save_ptr = if flags.heif_quantize {
+            match self.extract_rgba(img).and_then(|(w, h, rgba)| {
+                let rgb =
+                    self.quantize_rgba_to_rgb(&rgba, w, h, quality, flags.heif_colors, 0.0)?;
+                self.load_image_from_rgb(&rgb, w, h)
+            }) {
+                Ok(qi) => {
+                    _quantized = qi;
+                    _quantized.as_ptr()
+                }
                 Err(e) => {
-                    warn!(
-                        "[compression] HEIF quantize_to_rgb failed, falling back: {}",
-                        e
-                    );
-                    self.load_image(input)?
+                    warn!("[compression] HEIF quantize failed, falling back: {}", e);
+                    img.as_ptr()
                 }
             }
         } else {
-            self.load_image(input)?
+            img.as_ptr()
         };
 
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
+        self.save_image(save_ptr, &suffix)?;
 
         let size = fs::metadata(output)?.len();
         info!(
@@ -1029,6 +1056,7 @@ impl Vips {
 
     pub fn compress_tiff(
         &self,
+        img: &VipsImage<'_>,
         input: &Path,
         output: &Path,
         quality: u8,
@@ -1057,30 +1085,27 @@ impl Vips {
 
         info!("[compression] TIFF save params: {}", suffix);
 
-        let img = if flags.tiff_quantize {
-            match self.quantize_to_rgb(input, quality, flags.tiff_colors, 0.0) {
-                Ok((w, h, rgb)) => match self.load_image_from_rgb(&rgb, w, h) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        warn!("[compression] TIFF quantize load_image_from_rgb failed, falling back: {}", e);
-                        self.load_image(input)?
-                    }
-                },
+        let _quantized;
+        let save_ptr = if flags.tiff_quantize {
+            match self.extract_rgba(img).and_then(|(w, h, rgba)| {
+                let rgb =
+                    self.quantize_rgba_to_rgb(&rgba, w, h, quality, flags.tiff_colors, 0.0)?;
+                self.load_image_from_rgb(&rgb, w, h)
+            }) {
+                Ok(qi) => {
+                    _quantized = qi;
+                    _quantized.as_ptr()
+                }
                 Err(e) => {
-                    warn!(
-                        "[compression] TIFF quantize_to_rgb failed, falling back: {}",
-                        e
-                    );
-                    self.load_image(input)?
+                    warn!("[compression] TIFF quantize failed, falling back: {}", e);
+                    img.as_ptr()
                 }
             }
         } else {
-            self.load_image(input)?
+            img.as_ptr()
         };
 
-        let res = self.save_image(img, &suffix);
-        self.unref(img);
-        res?;
+        self.save_image(save_ptr, &suffix)?;
 
         let size = fs::metadata(output)?.len();
         info!(

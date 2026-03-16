@@ -30,20 +30,37 @@ pub struct CompressionFailed {
     pub error: String,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InputMode {
+    Manual,
+    Watched,
+}
+
 pub fn process_file(
     app: &tauri::AppHandle,
     vips: &Arc<Vips>,
     path: &Path,
 ) -> Result<CompressionRecord, String> {
+    process_file_with_mode(app, vips, path, InputMode::Watched)
+}
+
+pub fn process_file_with_mode(
+    app: &tauri::AppHandle,
+    vips: &Arc<Vips>,
+    path: &Path,
+    mode: InputMode,
+) -> Result<CompressionRecord, String> {
     let format = ImageFormat::from_path(path).ok_or_else(|| "Unsupported format".to_string())?;
 
-    // Wait for the file to be fully written (useful for downloads)
-    if let Err(e) = wait_for_file_stability(path) {
-        error!(
-            "[processor] File stability check failed for {}: {}",
-            path.display(),
-            e
-        );
+    // Only wait for file stability on watched/download paths
+    if mode == InputMode::Watched {
+        if let Err(e) = wait_for_file_stability(path) {
+            error!(
+                "[processor] File stability check failed for {}: {}",
+                path.display(),
+                e
+            );
+        }
     }
 
     let initial_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
@@ -103,8 +120,20 @@ pub fn process_file(
     const MAX_RETRIES: u8 = 5;
     const QUALITY_STEP: u8 = 10;
 
+    let effective_format = convert_to.unwrap_or(format);
+    let img = vips
+        .load_image(path)
+        .map_err(|e| format!("Failed to load {}: {e}", path.display()))?;
+
     for attempt in 0..=MAX_RETRIES {
-        match vips.compress(path, &output, current_quality, &flags, convert_to) {
+        match vips.compress_loaded(
+            &img,
+            path,
+            &output,
+            current_quality,
+            &flags,
+            effective_format,
+        ) {
             Ok(size) => {
                 compressed_size = size;
                 if size <= initial_size || current_quality <= 1 {
