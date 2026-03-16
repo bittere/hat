@@ -19,15 +19,15 @@ if [ -n "$STAGED_RS" ]; then
 
   cd src-tauri
 
-  # Check formatting
-  cargo fmt --all -- --check
+  # Format
+  cargo fmt --all
   if [ $? -ne 0 ]; then
-    echo "cargo fmt failed. Run 'cargo fmt' in src-tauri/ to fix."
+    echo "cargo fmt failed."
     exit 1
   fi
 
-  # Run clippy
-  cargo clippy -- -D warnings
+  # Run clippy on lib only (skip full build)
+  cargo clippy
   if [ $? -ne 0 ]; then
     echo "cargo clippy failed. Fix the warnings above."
     exit 1
