@@ -28,3 +28,4 @@ vendor/libvips/
 
 # .tsbuildinfo files
 *.tsbuildinfo
+stats.html
