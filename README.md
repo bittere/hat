@@ -1,6 +1,6 @@
 # Hat
 
-A free, local, fast image compressor for Linux, Windows and Mac.
+A free, local, fast image compressor for Linux, Windows and Mac. Built with AI, guided by a human.
 
 <insert demo here once I'm free>
 
@@ -34,13 +34,15 @@ Hat will always remain 100% free.
 
 ## Count me in!
 
-Note: Hat is currently being rewritten from scratch. Right now, you can grab the **latest preview version** of Hat from the [Releases](https://github.com/bittere/hat/releases). This version may be missing some features.
+Hat is a toy project, but tries to solve a serious need. Hat will always be experimenting with different things. While Hat is not exactly _stable_ right now (ie. some things might be missing/might go wrong), it still should work ~90% of the time. If you find an issue, please [file it](https://github.com/bittere/hat/issues/new/choose).
 
-If you'd instead like a more _solid/stable_ version of Hat, head over to the [latest stable release](https://github.com/bittere/hat/releases/latest), grab the binary for your computer and install it. This version will mostly work and has most of the advertised features, but might look/function differently.
+You can grab the latest version of Hat from the [latest Release page](https://github.com/bittere/hat/releases/latest).
+
+Note: Though the file name might say something like `hat-0.1.0(...)`, this is still the correct file for the version you have downloaded. For example, if you go to the `v0.5.6` release and download a binary from there, though the file name is `hat-0.1.0(...)`, it is still the correct binary for the `v0.5.6` version.
 
 ## Got a problem?
 
-File an issue!
+File an [issue](https://github.com/bittere/hat/issues/new/choose)!
 
 ## What's with the name?
 
