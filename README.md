@@ -2,7 +2,8 @@
 
 A free, local, fast image compressor for Linux, Windows and Mac. Built with AI, guided by a human.
 
-<insert demo here once I'm free>
+<video src="https://github.com/user-attachments/assets/f0711607-edcc-472d-9271-bed59159b483" alt="Demonstating Hat's automatic compression" title="Demonstating Hat's automatic compression"></video>
+In this demo, I copied a downloaded Unsplash image to a folder being watched by Hat. Hat detected the new file and automatically compressed it according to the compression settings I had configured in the app. Hat then sent me a system notification (can be turned off) after successfully compressing the image.
 
 ## Why?
 
@@ -11,7 +12,7 @@ In the time it takes for you to:
 1. Open an online image compression website
 2. Upload your (presumably large) image
 3. Run into file size limits/"Please Sign Up" popups
-4. Wait for the server ~to steal your data~ compress your image
+4. Wait for the server to ~steal your data~ compress your image
 5. Download it
 
 ...Hat's already done compressing your entire life's worth* of photos
@@ -31,6 +32,12 @@ Hat runs in the background when you close the window. To close Hat, go to your s
 No accounts, no uploads. Everything is processed by `libvips` locally.
 
 Hat will always remain 100% free.
+
+## What can I do with Hat?
+
+- Watch folders automatically
+- Adjust compression quality settings
+- Convert between file formats
 
 ## Count me in!
 
