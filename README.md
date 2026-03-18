@@ -36,8 +36,9 @@ Hat will always remain 100% free.
 ## What can I do with Hat?
 
 - Watch folders automatically
-- Adjust compression quality settings
 - Convert between file formats
+- Adjust compression quality settings
+- Drag-and-drop images to compress them
 
 ## Count me in!
 
