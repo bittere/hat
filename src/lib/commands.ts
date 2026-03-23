@@ -76,3 +76,11 @@ export function searchDirectories(query: string) {
 export function quitApp() {
 	return invoke<void>("quit_app");
 }
+
+export function resetConfig() {
+	return invoke<void>("reset_config");
+}
+
+export function openConfigDir() {
+	return invoke<void>("open_config_dir");
+}

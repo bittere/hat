@@ -15,7 +15,7 @@ import "./App.css";
 
 function App() {
 	const { history, handleManualCompress } = useCompressionEvents();
-	const { watchedFolders, addFolder, removeFolder } = useWatchedFolders();
+	const { watchedFolders, addFolder, removeFolder, resetConfig } = useWatchedFolders();
 
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -95,6 +95,7 @@ function App() {
 					watchedFolders={watchedFolders}
 					addFolder={addFolder}
 					removeFolder={removeFolder}
+					onResetConfig={resetConfig}
 				/>
 			</main>
 		</div>

@@ -23,6 +23,7 @@ interface SettingsDialogProps {
 	watchedFolders: string[];
 	addFolder: (path: string) => Promise<void>;
 	removeFolder: (path: string) => Promise<void>;
+	onResetConfig?: () => Promise<void>;
 }
 
 export function SettingsDialog({
@@ -31,6 +32,7 @@ export function SettingsDialog({
 	watchedFolders,
 	addFolder,
 	removeFolder,
+	onResetConfig,
 }: SettingsDialogProps) {
 	const [isDragOver, setIsDragOver] = useState(false);
 	const [activeTab, setActiveTab] = useState("compression");
@@ -113,7 +115,10 @@ export function SettingsDialog({
 					<Tuning2Linear />
 				</DialogTrigger>
 			)}
-			<DialogPopup className="h-[80vh] min-w-2xl lg:min-w-[60vw]" bottomStickOnMobile={false}>
+			<DialogPopup
+				className="h-[80vh] min-w-2xl lg:min-w-[60vw] xl:h-[60vh] xl:min-w-[40vw]"
+				bottomStickOnMobile={false}
+			>
 				<DialogHeader>
 					<DialogTitle>Settings</DialogTitle>
 					<DialogDescription>Configure compression and appearance.</DialogDescription>
@@ -126,6 +131,7 @@ export function SettingsDialog({
 						activeTab={activeTab}
 						onActiveTabChange={handleActiveTabChange}
 						isDragOver={isDragOver}
+						onResetConfig={onResetConfig}
 					/>
 				</DialogPanel>
 				<DialogFooter>

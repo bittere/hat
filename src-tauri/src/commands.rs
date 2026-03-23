@@ -87,6 +87,42 @@ pub fn set_format_options(
 }
 
 #[tauri::command]
+pub fn reset_config(
+    config: tauri::State<'_, Mutex<crate::config::ConfigManager>>,
+    watcher_state: tauri::State<'_, crate::watcher::WatcherHandle>,
+) -> Result<(), String> {
+    let mut config_manager = config.lock().map_err(|e| e.to_string())?;
+
+    // 1. Unwatch all current folders
+    let mut watcher = watcher_state.watcher.lock().map_err(|e| e.to_string())?;
+    if let Some(ref mut w) = *watcher {
+        for folder in &config_manager.config.watched_folders {
+            let _ = w.unwatch(Path::new(folder));
+        }
+    }
+
+    // 2. Reset config to default
+    config_manager.reset()?;
+
+    // 3. Watch new default folders
+    if let Some(ref mut w) = *watcher {
+        for folder in &config_manager.config.watched_folders {
+            let path = Path::new(folder);
+            if path.exists() {
+                if let Err(e) = w.watch(path, notify::RecursiveMode::NonRecursive) {
+                    error!("Failed to watch directory {}: {}", folder, e);
+                } else {
+                    info!("Watching directory: {}", folder);
+                }
+            }
+        }
+    }
+
+    info!("[config] Config reset to default");
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_compression_history(
     log: tauri::State<'_, Mutex<crate::log::CompressionLog>>,
 ) -> Vec<CompressionRecord> {
@@ -506,6 +542,14 @@ pub async fn search_directories(query: String) -> Vec<String> {
     }
 
     results
+}
+
+#[tauri::command]
+pub fn open_config_dir(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let _ = app.opener().open_path(config_dir.display().to_string(), None::<String>);
+    Ok(())
 }
 
 #[tauri::command]

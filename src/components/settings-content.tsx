@@ -1,4 +1,4 @@
-import { AddFolderLinear, AltArrowDownLinear } from "@solar-icons/react-perf";
+import { AddFolderLinear, AltArrowDownLinear, FolderOpenLinear } from "@solar-icons/react-perf";
 import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open as openFolderPicker } from "@tauri-apps/plugin-dialog";
@@ -29,6 +29,7 @@ import {
 import { SettingsSwitch } from "@/components/ui/settings-switch";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
+import { openConfigDir } from "@/lib/commands";
 
 export interface SettingsContentProps {
 	watchedFolders: string[];
@@ -38,6 +39,7 @@ export interface SettingsContentProps {
 	onActiveTabChange?: (tab: string) => void;
 	isDragOver?: boolean;
 	showFolders?: boolean;
+	onResetConfig?: () => Promise<void>;
 }
 
 const themeItems = [
@@ -54,6 +56,7 @@ export function SettingsContent({
 	onActiveTabChange,
 	isDragOver = false,
 	showFolders = true,
+	onResetConfig,
 }: SettingsContentProps) {
 	const [searchValue, setSearchValue] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
@@ -176,6 +179,16 @@ export function SettingsContent({
 			setAutostart(checked);
 		} catch (err) {
 			console.error("Failed to update autostart setting", err);
+		}
+	};
+
+	const handleReset = async () => {
+		if (onResetConfig) {
+			await onResetConfig();
+			// After reset, we need to refresh local state for the current tab
+			invoke<boolean>("get_show_background_notification").then(setShowBackgroundNotification);
+			invoke<boolean>("get_show_system_notifications").then(setShowSystemNotifications);
+			isEnabled().then(setAutostart);
 		}
 	};
 
@@ -353,7 +366,7 @@ export function SettingsContent({
 
 			{/* Notifications Tab */}
 			<TabsPanel value="notifications">
-				<div className="space-y-4">
+				<div className="space-y-2">
 					<SettingsSwitch
 						checked={showBackgroundNotification}
 						onCheckedChange={handleToggleBackgroundNotification}
@@ -378,6 +391,35 @@ export function SettingsContent({
 						title="Launch at Startup"
 						description="Automatically start Hat when you log in to your computer."
 					/>
+					<div className="border-t pt-4">
+						<div className="flex flex-col gap-2">
+							<h3 className="font-medium text-foreground text-sm">Maintenance</h3>
+							<p className="text-muted-foreground text-xs">
+								Open the application data folder to access configuration files and compression logs.
+							</p>
+							<Button
+								variant="outline"
+								size="sm"
+								className="mt-2 w-fit"
+								onClick={() => openConfigDir()}
+							>
+								<FolderOpenLinear className="mr-1.5 size-4" />
+								Open Config & Logs
+							</Button>
+						</div>
+					</div>
+					<div className="border-t pt-4">
+						<div className="flex flex-col gap-2">
+							<h3 className="font-medium text-foreground text-sm">Factory Reset</h3>
+							<p className="text-muted-foreground text-xs">
+								Delete all custom configuration and reset Hat to its default settings. This will
+								also reset your watched folders.
+							</p>
+							<Button variant="destructive" size="sm" className="mt-2 w-fit" onClick={handleReset}>
+								Reset All Config
+							</Button>
+						</div>
+					</div>
 				</div>
 			</TabsPanel>
 		</Tabs>

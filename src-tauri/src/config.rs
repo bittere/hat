@@ -325,4 +325,9 @@ impl ConfigManager {
         self.config.format_options = options;
         let _ = self.save();
     }
+
+    pub fn reset(&mut self) -> Result<(), String> {
+        self.config = AppConfig::default();
+        self.save()
+    }
 }

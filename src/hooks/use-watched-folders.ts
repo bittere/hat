@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { toastManager } from "@/components/ui/toast";
-import { addWatchedFolder, getWatchedFolders, removeWatchedFolder } from "@/lib/commands";
+import {
+	addWatchedFolder,
+	getWatchedFolders,
+	removeWatchedFolder,
+	resetConfig,
+} from "@/lib/commands";
 
 export function useWatchedFolders() {
 	const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
@@ -47,10 +52,30 @@ export function useWatchedFolders() {
 		}
 	}, []);
 
+	const resetFoldersConfig = useCallback(async () => {
+		try {
+			await resetConfig();
+			await refreshFolders();
+			toastManager.add({
+				title: "Config reset",
+				description: "Settings and folders have been reset to defaults.",
+				type: "success",
+			});
+		} catch (err) {
+			console.error("Failed to reset config", err);
+			toastManager.add({
+				title: "Failed to reset config",
+				description: String(err),
+				type: "error",
+			});
+		}
+	}, [refreshFolders]);
+
 	return {
 		watchedFolders,
 		addFolder,
 		removeFolder,
 		refreshFolders,
+		resetConfig: resetFoldersConfig,
 	};
 }

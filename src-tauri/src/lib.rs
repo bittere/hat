@@ -60,6 +60,8 @@ pub fn run() {
             commands::set_show_system_notifications,
             commands::get_format_options,
             commands::set_format_options,
+            commands::reset_config,
+            commands::open_config_dir,
             commands::quit_app,
         ])
         .setup(|app| {

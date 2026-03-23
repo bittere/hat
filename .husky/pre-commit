@@ -1,5 +1,3 @@
-#!/usr/bin/env sh
-
 # Run TypeScript type checking on the whole project
 echo "==> Running TypeScript type check..."
 if ! bun run typecheck; then
