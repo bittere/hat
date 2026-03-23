@@ -548,7 +548,9 @@ pub async fn search_directories(query: String) -> Vec<String> {
 pub fn open_config_dir(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let _ = app.opener().open_path(config_dir.display().to_string(), None::<String>);
+    let _ = app
+        .opener()
+        .open_path(config_dir.display().to_string(), None::<String>);
     Ok(())
 }
 
