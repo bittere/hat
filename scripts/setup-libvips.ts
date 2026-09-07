@@ -1,5 +1,5 @@
-import { $ } from "bun";
-import { cpSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
+import { cpSync, existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const REPO = "lovell/sharp-libvips";
@@ -83,7 +83,7 @@ async function downloadWithProgress(url: string, outputPath: string): Promise<vo
   
   console.log(`Download complete, writing to disk...`);
   const blob = new Blob(chunks);
-  await Bun.write(outputPath, blob);
+  writeFileSync(outputPath, new Uint8Array(await blob.arrayBuffer()));
   console.log(`Written to ${outputPath}`);
 }
 
@@ -111,14 +111,15 @@ async function main() {
     
     try {
       // Use spawn-style execution for better control
-      const proc = Bun.spawn(["tar", "-xJf", archivePath, "-C", VENDOR_DIR], {
-        stdout: "inherit",
-        stderr: "inherit",
+      const result = spawnSync("tar", ["-xJf", archivePath, "-C", VENDOR_DIR], {
+        stdio: "inherit",
       });
-      
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        throw new Error(`tar command failed with exit code ${exitCode}`);
+
+      if (result.error) {
+        throw result.error;
+      }
+      if (result.status !== 0) {
+        throw new Error(`tar command failed with exit code ${result.status}`);
       }
       console.log(`Extraction completed successfully`);
     } catch (error) {
@@ -139,8 +140,7 @@ async function main() {
       console.error(`Expected directory ${sourceLib} not found after extraction.`);
       console.error(`Available directories in ${VENDOR_DIR}:`);
       try {
-        const result = await $`ls -la ${VENDOR_DIR}`.quiet();
-        console.error(result.stdout.toString());
+        console.error(readdirSync(VENDOR_DIR).join("\n"));
       } catch (e) {
         console.error("Could not list directory:", e);
       }

@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.bittere.hat",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "deno task dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build:tauri",
+    "beforeBuildCommand": "deno task build:tauri",
     "frontendDist": "../dist"
   },
   "app": {
