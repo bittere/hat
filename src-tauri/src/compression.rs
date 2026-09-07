@@ -413,7 +413,12 @@ impl Vips {
             4 => raw.to_vec(),
             3 => {
                 let mut out = vec![0u8; pixel_count * 4];
-                for (src, dst) in raw.chunks_exact(3).zip(out.chunks_exact_mut(4)) {
+                for (src, dst) in raw
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .zip(out.as_chunks_mut::<4>().0.iter_mut())
+                {
                     dst[0] = src[0];
                     dst[1] = src[1];
                     dst[2] = src[2];
@@ -423,7 +428,12 @@ impl Vips {
             }
             2 => {
                 let mut out = vec![0u8; pixel_count * 4];
-                for (src, dst) in raw.chunks_exact(2).zip(out.chunks_exact_mut(4)) {
+                for (src, dst) in raw
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .zip(out.as_chunks_mut::<4>().0.iter_mut())
+                {
                     dst[0] = src[0];
                     dst[1] = src[0];
                     dst[2] = src[0];
@@ -516,7 +526,10 @@ impl Vips {
         );
 
         let mut rgb = vec![0u8; pixel_count * 3];
-        for (&idx, dst) in indexed_pixels.iter().zip(rgb.chunks_exact_mut(3)) {
+        for (&idx, dst) in indexed_pixels
+            .iter()
+            .zip(rgb.as_chunks_mut::<3>().0.iter_mut())
+        {
             let c = &palette[idx as usize];
             dst[0] = c.r;
             dst[1] = c.g;
