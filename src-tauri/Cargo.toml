@@ -32,7 +32,7 @@ libloading = "0.9"
 notify = { version = "8", features = ["serde"] }
 dirs = "6"
 thiserror = "2"
-tauri-plugin-notification = "2.3.3"
+tauri-plugin-notification = "2.4.0"
 tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 log = "0.4"
