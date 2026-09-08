@@ -46,7 +46,9 @@ Hat is a toy project, but tries to solve a serious need. Hat will always be expe
 
 You can grab the latest version of Hat from the [latest Release page](https://github.com/bittere/hat/releases/latest).
 
-Note: Though the file name might say something like `hat-0.1.0(...)`, this is still the correct file for the version you have downloaded. For example, if you go to the `v0.5.6` release and download a binary from there, though the file name is `hat-0.1.0(...)`, it is still the correct binary for the `v0.5.6` version.
+~~Note: Though the file name might say something like `hat-0.1.0(...)`, this is still the correct file for the version you have downloaded. For example, if you go to the `v0.5.6` release and download a binary from there, though the file name is `hat-0.1.0(...)`, it is still the correct binary for the `v0.5.6` version.~~
+
+We fixed that :).
 
 ## Got a problem?
 
