@@ -116,7 +116,7 @@ export function SettingsDialog({
 				</DialogTrigger>
 			)}
 			<DialogPopup
-				className="h-[80vh] min-w-2xl lg:min-w-[60vw] xl:h-[60vh] xl:min-w-[40vw]"
+				className="h-[80vh] min-w-2xl lg:min-w-[60vw] xl:h-[75vh] xl:min-w-[50vw]"
 				bottomStickOnMobile={false}
 			>
 				<DialogHeader>

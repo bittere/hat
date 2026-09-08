@@ -1,9 +1,9 @@
 # AGENTS.md
 
 ## Build & Dev Commands
-- **Dev:** `bun run tauri dev` — **Lint:** `bun run lint` (Biome) — **Lint+fix:** `bun run lint:fix`
-- **Build:** `bun run build:tauri` — **Typecheck:** `bun run typecheck` — **Check Rust:** `cargo check` (from `src-tauri/`)
-- **Package manager:** Bun (not npm/yarn). No test framework configured.
+- **Dev:** `deno x tauri dev` — **Lint:** `deno task lint` (Biome) — **Lint+fix:** `deno task lint:fix`
+- **Build:** `deno task build:tauri` — **Typecheck:** `deno task typecheck` — **Check Rust:** `cargo check` (from `src-tauri/`)
+- **Package manager:** Deno (not npm/yarn). No test framework configured.
 
 ## Architecture
 - **Tauri v2** desktop app: Rust backend (`src-tauri/src/`) + React frontend (`src/`).

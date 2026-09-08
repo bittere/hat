@@ -4,7 +4,7 @@ import type { Event } from "@tauri-apps/api/event";
 import { type DragDropEvent, getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff"]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp", "avif", "heif", "heic", "tif", "tiff"]);
 
 function getExt(name: string) {
 	const dot = name.lastIndexOf(".");

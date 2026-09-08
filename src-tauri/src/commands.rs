@@ -4,7 +4,8 @@ use crate::compression::{
 use crate::watcher::VipsState;
 use log::{error, info};
 use notify::Watcher;
-use std::path::Path;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
@@ -360,6 +361,68 @@ pub async fn compress_files(
         }
     });
 
+    Ok(())
+}
+
+#[derive(Serialize)]
+pub struct StudioOutput {
+    path: String,
+    initial_size: u64,
+    output_size: u64,
+}
+
+#[tauri::command]
+pub fn process_studio_image(
+    path: String,
+    target_format: String,
+    options: crate::config::FormatOptions,
+    output_path: Option<String>,
+    vips_state: tauri::State<'_, VipsState>,
+) -> Result<StudioOutput, String> {
+    let vips = vips_state
+        .inner()
+        .vips
+        .as_ref()
+        .ok_or("libvips not available")?;
+    let input = Path::new(&path);
+    let format = ImageFormat::from_extension(&target_format)
+        .ok_or_else(|| format!("Unsupported target format: {target_format}"))?;
+    let output = output_path.map(PathBuf::from).unwrap_or_else(|| {
+        let id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!("hat-studio-{id}.{}", format.extension()))
+    });
+    let quality = match format {
+        ImageFormat::Png => options.png.quality,
+        ImageFormat::Jpeg => options.jpeg.quality,
+        ImageFormat::WebP => options.webp.quality,
+        ImageFormat::Avif => options.avif.quality,
+        ImageFormat::Heif => options.heif.quality,
+        ImageFormat::Tiff => options.tiff.quality,
+    };
+    let flags = CompressionFlags::from_format_options(&options, format);
+    let initial_size = std::fs::metadata(input)
+        .map(|metadata| metadata.len())
+        .map_err(|error| error.to_string())?;
+    let output_size = vips
+        .compress(input, &output, quality, &flags, Some(format))
+        .map_err(|error| error.to_string())?;
+
+    Ok(StudioOutput {
+        path: output.display().to_string(),
+        initial_size,
+        output_size,
+    })
+}
+
+#[tauri::command]
+pub fn cleanup_studio_preview(path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    if path.starts_with(std::env::temp_dir()) && path.exists() {
+        std::fs::remove_file(path).map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 

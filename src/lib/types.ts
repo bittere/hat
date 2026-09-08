@@ -106,3 +106,9 @@ export interface FormatOptions {
 	heif: HeifConfig;
 	tiff: TiffConfig;
 }
+
+export interface StudioOutput {
+	path: string;
+	initial_size: number;
+	output_size: number;
+}

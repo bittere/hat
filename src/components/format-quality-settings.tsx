@@ -11,25 +11,23 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import type { FormatOptions } from "@/lib/types";
 
-export function FormatQualitySettings() {
-	const [formatOptions, setFormatOptions] = useState<FormatOptions | null>(null);
-	const saveTimer = useRef<ReturnType<typeof setTimeout>>(null);
+interface FormatOptionsEditorProps {
+	options: FormatOptions;
+	onChange: (options: FormatOptions) => void;
+	format?: FormatKey;
+	onFormatChange?: (format: FormatKey) => void;
+}
 
-	useEffect(() => {
-		invoke<FormatOptions>("get_format_options").then(setFormatOptions);
-	}, []);
-
-	const updateOptions = useCallback((updater: (prev: FormatOptions) => FormatOptions) => {
-		setFormatOptions((prev) => {
-			if (!prev) return prev;
-			const updated = updater(prev);
-			if (saveTimer.current) clearTimeout(saveTimer.current);
-			saveTimer.current = setTimeout(() => {
-				invoke("set_format_options", { options: updated });
-			}, 300);
-			return updated;
-		});
-	}, []);
+export function FormatOptionsEditor({
+	options,
+	onChange,
+	format,
+	onFormatChange,
+}: FormatOptionsEditorProps) {
+	const updateOptions = useCallback(
+		(updater: (prev: FormatOptions) => FormatOptions) => onChange(updater(options)),
+		[onChange, options]
+	);
 
 	const handleQualityChange = useCallback(
 		(key: FormatKey, value: number) => {
@@ -51,10 +49,14 @@ export function FormatQualitySettings() {
 		[updateOptions]
 	);
 
-	if (!formatOptions) return null;
-
 	return (
-		<Tabs className="h-full w-full flex-row" defaultValue="jpeg" orientation="vertical">
+		<Tabs
+			className="h-full w-full flex-row"
+			defaultValue="jpeg"
+			value={format}
+			onValueChange={(value) => onFormatChange?.(value as FormatKey)}
+			orientation="vertical"
+		>
 			<div className="border-s">
 				<TabsList variant="underline">
 					{FORMAT_LABELS.map(({ key, label }) => (
@@ -68,7 +70,7 @@ export function FormatQualitySettings() {
 			<TabsPanel value="jpeg" className="overflow-hidden">
 				<ScrollArea scrollFade className="h-full">
 					<JpegPanel
-						config={formatOptions.jpeg}
+						config={options.jpeg}
 						onQualityChange={(val) => handleQualityChange("jpeg", val)}
 						onFieldChange={(field, val) => updateField("jpeg", field, val)}
 					/>
@@ -78,7 +80,7 @@ export function FormatQualitySettings() {
 			<TabsPanel value="png" className="overflow-hidden">
 				<ScrollArea scrollFade className="h-full">
 					<PngPanel
-						config={formatOptions.png}
+						config={options.png}
 						onQualityChange={(val) => handleQualityChange("png", val)}
 						onFieldChange={(field, val) => updateField("png", field, val)}
 					/>
@@ -88,7 +90,7 @@ export function FormatQualitySettings() {
 			<TabsPanel value="webp" className="overflow-hidden">
 				<ScrollArea scrollFade className="h-full">
 					<WebpPanel
-						config={formatOptions.webp}
+						config={options.webp}
 						onQualityChange={(val) => handleQualityChange("webp", val)}
 						onFieldChange={(field, val) => updateField("webp", field, val)}
 					/>
@@ -98,7 +100,7 @@ export function FormatQualitySettings() {
 			<TabsPanel value="avif" className="overflow-hidden">
 				<ScrollArea scrollFade className="h-full">
 					<AvifPanel
-						config={formatOptions.avif}
+						config={options.avif}
 						onQualityChange={(val) => handleQualityChange("avif", val)}
 						onFieldChange={(field, val) => updateField("avif", field, val)}
 					/>
@@ -108,7 +110,7 @@ export function FormatQualitySettings() {
 			<TabsPanel value="heif" className="overflow-hidden">
 				<ScrollArea scrollFade className="h-full">
 					<HeifPanel
-						config={formatOptions.heif}
+						config={options.heif}
 						onQualityChange={(val) => handleQualityChange("heif", val)}
 						onFieldChange={(field, val) => updateField("heif", field, val)}
 					/>
@@ -118,7 +120,7 @@ export function FormatQualitySettings() {
 			<TabsPanel value="tiff" className="overflow-hidden">
 				<ScrollArea scrollFade className="h-full">
 					<TiffPanel
-						config={formatOptions.tiff}
+						config={options.tiff}
 						onQualityChange={(val) => handleQualityChange("tiff", val)}
 						onFieldChange={(field, val) => updateField("tiff", field, val)}
 					/>
@@ -126,4 +128,25 @@ export function FormatQualitySettings() {
 			</TabsPanel>
 		</Tabs>
 	);
+}
+
+export function FormatQualitySettings() {
+	const [formatOptions, setFormatOptions] = useState<FormatOptions | null>(null);
+	const saveTimer = useRef<ReturnType<typeof setTimeout>>(null);
+
+	useEffect(() => {
+		invoke<FormatOptions>("get_format_options").then(setFormatOptions);
+	}, []);
+
+	const handleChange = useCallback((updated: FormatOptions) => {
+		setFormatOptions(updated);
+		if (saveTimer.current) clearTimeout(saveTimer.current);
+		saveTimer.current = setTimeout(() => {
+			invoke("set_format_options", { options: updated });
+		}, 300);
+	}, []);
+
+	if (!formatOptions) return null;
+
+	return <FormatOptionsEditor options={formatOptions} onChange={handleChange} />;
 }

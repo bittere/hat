@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CompressionRecord, FormatOptions } from "@/lib/types";
+import type { CompressionRecord, FormatOptions, StudioOutput } from "@/lib/types";
 
 export function getCompressionHistory() {
 	return invoke<CompressionRecord[]>("get_compression_history");
@@ -11,6 +11,24 @@ export function clearCompressionHistory() {
 
 export function compressFiles(paths: string[]) {
 	return invoke<void>("compress_files", { paths });
+}
+
+export function processStudioImage(
+	path: string,
+	targetFormat: string,
+	options: FormatOptions,
+	outputPath?: string
+) {
+	return invoke<StudioOutput>("process_studio_image", {
+		path,
+		targetFormat,
+		options,
+		outputPath,
+	});
+}
+
+export function cleanupStudioPreview(path: string) {
+	return invoke<void>("cleanup_studio_preview", { path });
 }
 
 export function recompress(path: string, previousQuality: number) {

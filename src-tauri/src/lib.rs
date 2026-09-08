@@ -50,6 +50,8 @@ pub fn run() {
             commands::check_file_exists,
             commands::recompress,
             commands::compress_files,
+            commands::process_studio_image,
+            commands::cleanup_studio_preview,
             commands::get_watched_folders,
             commands::add_watched_folder,
             commands::remove_watched_folder,
