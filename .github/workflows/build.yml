@@ -124,6 +124,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LIBVIPS_TARGET: ${{ matrix.libvips_target }}
 
+      - name: Inject version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          deno eval '
+            const path = "src-tauri/tauri.conf.json";
+            const config = JSON.parse(await Deno.readTextFile(path));
+            config.version = Deno.env.get("RELEASE_TAG").replace(/^v/, "");
+            await Deno.writeTextFile(path, JSON.stringify(config, null, 2) + "\n");
+          '
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
